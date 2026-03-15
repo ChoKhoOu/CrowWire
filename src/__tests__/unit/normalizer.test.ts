@@ -1,11 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../../config/config.js', () => {
+  const cfg = {
+    server: { port: 3000, node_env: 'test', log_level: 'error' },
+    database: { url: 'postgresql://test:test@localhost:5432/test' },
+    redis: { url: 'redis://localhost:6379' },
+    llm: { provider: 'openai', api_key: 'test-key', base_url: 'http://localhost:9999/v1', scoring_model: 'test-model', summarization_model: 'test-model' },
+    feeds: { rsshub_base_url: 'http://localhost:1200', sources: [] },
+    delivery: { targets: [] },
+    scoring: { urgent_threshold: 85, batch_summarization_threshold: 20 },
+    queue: { ingest_concurrency: 1, scorer_concurrency: 1, deliver_concurrency: 1, urgent_flush_interval_ms: 30000, batch_flush_interval_ms: 600000, batch_flush_count_threshold: 50 },
+    dedup: { ttl_hours: 72, title_bucket_minutes: 30 },
+    content: { max_size_bytes: 102400 },
+  };
+  return {
+    loadConfig: vi.fn(() => cfg),
+    getConfig: vi.fn(() => cfg),
+  };
+});
+
 import { normalize } from '../../pipeline/normalizer/normalizer.js';
 import type { FeedConfig } from '../../types/feed.js';
-
-// Must set env vars before importing modules that use getEnv
-process.env.ANTHROPIC_API_KEY = 'test-key';
-process.env.OPENCLAW_HOOKS_TOKEN = 'test-token';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
 
 const mockFeed: FeedConfig = {
   name: 'test-feed',

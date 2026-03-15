@@ -2,10 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { buildScoringPrompt } from '../../pipeline/scorer/prompt.js';
 import type { CrowWireEvent } from '../../types/event.js';
 
-process.env.ANTHROPIC_API_KEY = 'test-key';
-process.env.OPENCLAW_HOOKS_TOKEN = 'test-token';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-
 function makeEvent(overrides: Partial<CrowWireEvent> = {}): CrowWireEvent {
   return {
     id: 'test-id',

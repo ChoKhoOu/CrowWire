@@ -13,19 +13,19 @@ afterAll(async () => {
 
 describe('mock-model-server', () => {
   async function score(title: string) {
-    const res = await fetch(`${server.address}/v1/messages`, {
+    const res = await fetch(`${server.address}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20250315',
+        model: 'gpt-4o-mini',
         max_tokens: 512,
         messages: [{ role: 'user', content: `Title: ${title}\nSummary: test` }],
         tools: [],
-        tool_choice: { type: 'tool', name: 'score_event' },
+        tool_choice: { type: 'function', function: { name: 'score_event' } },
       }),
     });
     const data = await res.json() as any;
-    return data.content[0].input;
+    return JSON.parse(data.choices[0].message.tool_calls[0].function.arguments);
   }
 
   it('scores "breaking" as urgent (90)', async () => {
@@ -48,8 +48,8 @@ describe('mock-model-server', () => {
     expect(result.urgency_score).toBe(65);
   });
 
-  it('returns valid tool_use format', async () => {
-    const res = await fetch(`${server.address}/v1/messages`, {
+  it('returns valid OpenAI tool_calls format', async () => {
+    const res = await fetch(`${server.address}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -59,10 +59,12 @@ describe('mock-model-server', () => {
       }),
     });
     const data = await res.json() as any;
-    expect(data.content[0].type).toBe('tool_use');
-    expect(data.content[0].name).toBe('score_event');
-    expect(data.content[0].input.urgency_score).toBeTypeOf('number');
-    expect(data.content[0].input.category_tags).toBeInstanceOf(Array);
-    expect(data.content[0].input.reason).toBeTypeOf('string');
+    const toolCall = data.choices[0].message.tool_calls[0];
+    expect(toolCall.type).toBe('function');
+    expect(toolCall.function.name).toBe('score_event');
+    const args = JSON.parse(toolCall.function.arguments);
+    expect(args.urgency_score).toBeTypeOf('number');
+    expect(args.category_tags).toBeInstanceOf(Array);
+    expect(args.reason).toBeTypeOf('string');
   });
 });

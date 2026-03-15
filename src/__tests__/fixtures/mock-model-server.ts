@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 
-interface MessageRequest {
+interface ChatCompletionRequest {
   model: string;
   max_tokens: number;
   temperature?: number;
@@ -11,10 +11,10 @@ interface MessageRequest {
 
 export async function createMockModelServer(port: number = 0) {
   const app = Fastify();
-  const receivedRequests: MessageRequest[] = [];
+  const receivedRequests: ChatCompletionRequest[] = [];
 
-  app.post('/v1/messages', async (request, reply) => {
-    const body = request.body as MessageRequest;
+  app.post('/v1/chat/completions', async (request, reply) => {
+    const body = request.body as ChatCompletionRequest;
     receivedRequests.push(body);
 
     // Extract event title from the prompt
@@ -49,27 +49,39 @@ export async function createMockModelServer(port: number = 0) {
       reason = 'Technology development with industry relevance.';
     }
 
+    const toolCallArgs = JSON.stringify({
+      urgency_score: urgency,
+      relevance_score: relevance,
+      novelty_score: novelty,
+      category_tags: tags,
+      reason,
+    });
+
     return reply.status(200).send({
-      id: 'msg_mock_001',
-      type: 'message',
-      role: 'assistant',
+      id: 'chatcmpl-mock-001',
+      object: 'chat.completion',
       model: body.model,
-      content: [
+      choices: [
         {
-          type: 'tool_use',
-          id: 'toolu_mock_001',
-          name: 'score_event',
-          input: {
-            urgency_score: urgency,
-            relevance_score: relevance,
-            novelty_score: novelty,
-            category_tags: tags,
-            reason,
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_mock_001',
+                type: 'function',
+                function: {
+                  name: 'score_event',
+                  arguments: toolCallArgs,
+                },
+              },
+            ],
           },
+          finish_reason: 'tool_calls',
         },
       ],
-      stop_reason: 'tool_use',
-      usage: { input_tokens: 100, output_tokens: 50 },
+      usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
     });
   });
 
