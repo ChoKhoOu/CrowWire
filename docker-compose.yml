@@ -56,8 +56,8 @@ services:
     build: .
     ports:
       - "3000:3000"
-    env_file:
-      - .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy

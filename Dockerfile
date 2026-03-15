@@ -12,6 +12,6 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
-COPY feeds.config.yaml ./
+# config.yaml is mounted at runtime via docker-compose
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
