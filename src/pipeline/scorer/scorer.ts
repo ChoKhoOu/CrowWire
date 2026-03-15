@@ -3,7 +3,7 @@ import { getDb } from '../../db/client.js';
 import { events } from '../../db/schema.js';
 import { getRedisConnection } from '../../queue/connection.js';
 import { getQueues } from '../../queue/queues.js';
-import { getEnv } from '../../config/env.js';
+import { getConfig } from '../../config/config.js';
 import { REDIS_KEYS } from '../../config/constants.js';
 import { createChildLogger } from '../../shared/logger.js';
 import { ModelClient } from './model-client.js';
@@ -18,11 +18,7 @@ let _modelClient: ModelClient | null = null;
 
 function getModelClient(): ModelClient {
   if (!_modelClient) {
-    const env = getEnv();
-    _modelClient = new ModelClient({
-      apiKey: env.ANTHROPIC_API_KEY,
-      model: env.SCORING_MODEL,
-    });
+    _modelClient = new ModelClient();
   }
   return _modelClient;
 }
@@ -42,7 +38,7 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
     published_at: new Date(rawEvent.published_at),
     ingested_at: new Date(rawEvent.ingested_at),
   };
-  const env = getEnv();
+  const config = getConfig();
 
   log.info({ eventId: event.id, title: event.title }, 'Scoring event');
 
@@ -55,14 +51,11 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
     modelCircuitBreaker.recordSuccess();
 
     // 2. Route inline
-    const routing = scoreResult.urgency_score >= env.URGENT_SCORE_THRESHOLD ? 'urgent' : 'batch';
+    const routing = scoreResult.urgency_score >= config.scoring.urgent_threshold ? 'urgent' : 'batch';
 
     // 3. Build scored event
     const scoredEvent: ScoredEvent = {
       ...event,
-      // Ensure dates are Date objects (may be strings from job serialization)
-      published_at: new Date(event.published_at),
-      ingested_at: new Date(event.ingested_at),
       urgency_score: scoreResult.urgency_score,
       relevance_score: scoreResult.relevance_score,
       novelty_score: scoreResult.novelty_score,
@@ -114,7 +107,7 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
     // 6. Check batch early flush threshold
     if (bundleType === 'batch') {
       const count = await redis.scard(eventsKey);
-      if (count >= env.BATCH_FLUSH_COUNT_THRESHOLD) {
+      if (count >= config.queue.batch_flush_count_threshold) {
         const { aggregate } = getQueues();
         const minuteBucket = Math.floor(Date.now() / 60000);
         await aggregate.add(`batch-early-flush:${minuteBucket}`, { bundleType: 'batch' }, {
@@ -135,13 +128,16 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
 
   } catch (error) {
     scoreTimer();
-    modelCircuitBreaker.recordFailure();
-    modelApiErrorsTotal.inc({ error_type: error instanceof PermanentError ? 'permanent' : 'transient' });
 
     if (error instanceof PermanentError) {
+      modelApiErrorsTotal.inc({ error_type: 'permanent' });
       log.error({ eventId: event.id, err: error }, 'Permanent scoring error');
       throw error;
     }
+
+    modelCircuitBreaker.recordFailure();
+    modelApiErrorsTotal.inc({ error_type: 'transient' });
+
     if (error instanceof TransientError) {
       log.warn({ eventId: event.id, err: error }, 'Transient scoring error, will retry');
       throw error;

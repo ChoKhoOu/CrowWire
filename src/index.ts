@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import { loadEnv } from './config/env.js';
+import { loadConfig } from './config/config.js';
 import { logger } from './shared/logger.js';
 import { QUEUE_NAMES } from './config/constants.js';
 import { healthRoutes } from './api/routes/health.js';
@@ -17,13 +17,12 @@ import { processIngestJob } from './pipeline/ingestor/ingestor.js';
 import { processScoreJob } from './pipeline/scorer/scorer.js';
 import { processUrgentFlush } from './pipeline/aggregator/urgent-flusher.js';
 import { processBatchFlush } from './pipeline/aggregator/batch-flusher.js';
-import { OpenClawBridge } from './pipeline/bridge/openclaw-bridge.js';
+import { createDeliverProcessor } from './pipeline/delivery/deliver-worker.js';
 import { queueDepth, dlqDepth } from './shared/metrics.js';
-import type { DeliveryPayload } from './types/delivery.js';
 
 async function main() {
-  const env = loadEnv();
-  logger.info({ nodeEnv: env.NODE_ENV }, 'Starting CrowWire');
+  const config = loadConfig();
+  logger.info({ nodeEnv: config.server.node_env }, 'Starting CrowWire');
 
   // Verify database schema exists
   try {
@@ -48,20 +47,20 @@ async function main() {
   await app.register(metricsRoute);
 
   // Start HTTP server
-  await app.listen({ port: env.PORT, host: '0.0.0.0' });
-  logger.info({ port: env.PORT }, 'HTTP server listening');
+  await app.listen({ port: config.server.port, host: '0.0.0.0' });
+  logger.info({ port: config.server.port }, 'HTTP server listening');
 
   // Register BullMQ workers
   registerWorker(QUEUE_NAMES.INGEST, processIngestJob, {
-    concurrency: env.INGEST_CONCURRENCY,
+    concurrency: config.queue.ingest_concurrency,
   });
-  logger.info({ concurrency: env.INGEST_CONCURRENCY }, 'Ingest worker registered');
+  logger.info({ concurrency: config.queue.ingest_concurrency }, 'Ingest worker registered');
 
   registerWorker(QUEUE_NAMES.SCORE, processScoreJob, {
-    concurrency: env.SCORER_CONCURRENCY,
+    concurrency: config.queue.scorer_concurrency,
     limiter: { max: 10, duration: 1000 },
   });
-  logger.info({ concurrency: env.SCORER_CONCURRENCY }, 'Score worker registered');
+  logger.info({ concurrency: config.queue.scorer_concurrency }, 'Score worker registered');
 
   // Aggregation worker: handles both urgent and batch flush jobs
   registerWorker(QUEUE_NAMES.AGGREGATE, async (job) => {
@@ -75,12 +74,11 @@ async function main() {
   logger.info('Aggregate worker registered (concurrency: 1)');
 
   // Delivery worker
-  const bridge = new OpenClawBridge();
-  registerWorker(QUEUE_NAMES.DELIVER, async (job) => {
-    const { payload } = job.data as { payload: DeliveryPayload };
-    await bridge.deliver(payload, job.attemptsMade + 1);
-  }, { concurrency: env.DELIVER_CONCURRENCY });
-  logger.info({ concurrency: env.DELIVER_CONCURRENCY }, 'Deliver worker registered');
+  const deliverProcessor = createDeliverProcessor();
+  registerWorker(QUEUE_NAMES.DELIVER, deliverProcessor, {
+    concurrency: config.queue.deliver_concurrency,
+  });
+  logger.info({ concurrency: config.queue.deliver_concurrency }, 'Deliver worker registered');
 
   // Setup feed schedulers
   await setupFeedSchedulers();
@@ -89,20 +87,20 @@ async function main() {
   // Setup aggregation flush schedulers
   const { aggregate } = getQueues();
   await aggregate.upsertJobScheduler('urgent-flush', {
-    every: env.URGENT_FLUSH_INTERVAL_MS,
+    every: config.queue.urgent_flush_interval_ms,
   }, {
     name: 'flush:urgent',
     data: { bundleType: 'urgent' },
   });
   await aggregate.upsertJobScheduler('batch-flush', {
-    every: env.BATCH_FLUSH_INTERVAL_MS,
+    every: config.queue.batch_flush_interval_ms,
   }, {
     name: 'flush:batch',
     data: { bundleType: 'batch' },
   });
   logger.info({
-    urgentInterval: env.URGENT_FLUSH_INTERVAL_MS,
-    batchInterval: env.BATCH_FLUSH_INTERVAL_MS,
+    urgentInterval: config.queue.urgent_flush_interval_ms,
+    batchInterval: config.queue.batch_flush_interval_ms,
   }, 'Aggregation flush schedulers initialized');
 
   // DLQ depth monitoring (runs every 60s)

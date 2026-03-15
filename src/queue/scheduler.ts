@@ -1,10 +1,10 @@
 import { getQueues } from './queues.js';
-import { getEnabledFeeds } from '../config/feeds.js';
+import { getConfig } from '../config/config.js';
 import { logger } from '../shared/logger.js';
-import type { FeedConfig } from '../types/feed.js';
 
-export async function setupFeedSchedulers(configPath?: string): Promise<void> {
-  const feeds = getEnabledFeeds(configPath);
+export async function setupFeedSchedulers(): Promise<void> {
+  const config = getConfig();
+  const feeds = config.feeds.sources.filter(f => f.enabled);
   const { ingest } = getQueues();
 
   for (const feed of feeds) {

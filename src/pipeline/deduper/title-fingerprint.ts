@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { getEnv } from '../../config/env.js';
+import { getConfig } from '../../config/config.js';
 import type { CrowWireEvent } from '../../types/event.js';
 
 const STOPWORDS = new Set([
@@ -9,7 +9,7 @@ const STOPWORDS = new Set([
 ]);
 
 export function computeTitleFingerprint(event: CrowWireEvent): string {
-  const env = getEnv();
+  const config = getConfig();
   // 1. Lowercase
   const lower = event.title.toLowerCase();
   // 2. Tokenize and remove stopwords
@@ -17,7 +17,7 @@ export function computeTitleFingerprint(event: CrowWireEvent): string {
   // 3. Sort alphabetically
   tokens.sort();
   // 4. Build time bucket
-  const bucketMs = env.DEDUP_TITLE_BUCKET_MINUTES * 60 * 1000;
+  const bucketMs = config.dedup.title_bucket_minutes * 60 * 1000;
   const publishedMs = event.published_at.getTime();
   const bucket = Math.floor(publishedMs / bucketMs);
   // 5. Combine with source name

@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from './schema.js';
-import { getEnv } from '../config/env.js';
+import { getConfig } from '../config/config.js';
 import { logger } from '../shared/logger.js';
 
 const { Pool } = pg;
@@ -11,9 +11,9 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getPool(): pg.Pool {
   if (!_pool) {
-    const env = getEnv();
+    const config = getConfig();
     _pool = new Pool({
-      connectionString: env.DATABASE_URL,
+      connectionString: config.database.url,
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,

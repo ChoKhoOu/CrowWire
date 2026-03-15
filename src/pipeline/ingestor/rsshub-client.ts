@@ -1,4 +1,4 @@
-import { getEnv } from '../../config/env.js';
+import { getConfig } from '../../config/config.js';
 import { createChildLogger } from '../../shared/logger.js';
 import { TransientError } from '../../types/errors.js';
 import type { RawFeedItem } from '../../types/event.js';
@@ -21,8 +21,8 @@ interface RSSHubResponse {
 }
 
 export async function fetchRSSHubFeed(route: string): Promise<RawFeedItem[]> {
-  const env = getEnv();
-  const url = `${env.RSSHUB_BASE_URL}${route}?format=json&filter_time=3600`;
+  const config = getConfig();
+  const url = `${config.feeds.rsshub_base_url}${route}?format=json&filter_time=3600`;
 
   log.debug({ url }, 'Fetching RSSHub feed');
 

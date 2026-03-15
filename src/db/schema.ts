@@ -51,10 +51,11 @@ export const deliveryLog = pgTable('delivery_log', {
   error_message: text('error_message'),
   duration_ms: integer('duration_ms'),
   idempotency_key: varchar('idempotency_key', { length: 64 }),
+  target_name: varchar('target_name', { length: 100 }).notNull().default('openclaw'),
   attempted_at: timestamp('attempted_at', { withTimezone: true }),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_delivery_bundle').on(table.bundle_id),
   index('idx_delivery_attempted').on(table.attempted_at),
-  index('idx_delivery_idempotency').on(table.idempotency_key),
+  index('idx_delivery_idempotency_target').on(table.idempotency_key, table.target_name),
 ]);

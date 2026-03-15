@@ -10,19 +10,21 @@ export interface EventBundle {
   tags: string[];              // Union of all event tags
 }
 
-export interface DeliveryPayload {
+export interface FlushPayload {
+  bundle: EventBundle;
   message: string;
-  name: 'CrowWire';
-  agentId: 'main';
-  wakeMode: 'now';
-  deliver: true;
-  channel: string;
-  _bundle: EventBundle;     // Internal tracking (not sent to OpenClaw)
+}
+
+export interface DeliverJobData {
+  target_name: string;
+  target_type: 'discord' | 'openclaw';
+  payload: FlushPayload;
 }
 
 export interface DeliveryResult {
   success: boolean;
   status_code: number;
+  target_name: string;
   response_body?: unknown;
   error?: string;
   attempted_at: Date;

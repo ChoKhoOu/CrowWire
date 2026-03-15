@@ -1,5 +1,5 @@
 import { getRedisConnection } from '../../queue/connection.js';
-import { getEnv } from '../../config/env.js';
+import { getConfig } from '../../config/config.js';
 import { REDIS_KEYS } from '../../config/constants.js';
 import { createChildLogger } from '../../shared/logger.js';
 import { computeIdentityHash } from './identity-hash.js';
@@ -17,8 +17,8 @@ export interface DedupResult {
 
 export async function deduplicate(event: CrowWireEvent): Promise<DedupResult> {
   const redis = getRedisConnection();
-  const env = getEnv();
-  const ttlSeconds = env.DEDUP_TTL_HOURS * 3600;
+  const config = getConfig();
+  const ttlSeconds = config.dedup.ttl_hours * 3600;
 
   // Strategy 1: Identity hash (guid or canonical URL)
   const identityHash = computeIdentityHash(event);

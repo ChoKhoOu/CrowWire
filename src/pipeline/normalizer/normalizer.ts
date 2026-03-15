@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { uuidv7 } from 'uuidv7';
-import { getEnv } from '../../config/env.js';
+import { getConfig } from '../../config/config.js';
 import { canonicalizeUrl } from './url-canonicalizer.js';
 import { createChildLogger } from '../../shared/logger.js';
 import type { RawFeedItem, CrowWireEvent } from '../../types/event.js';
@@ -14,18 +14,18 @@ export function normalize(raw: RawFeedItem, feedConfig: FeedConfig): CrowWireEve
     return null;
   }
 
-  const env = getEnv();
+  const config = getConfig();
   const canonicalUrl = canonicalizeUrl(raw.link);
 
   // Truncate content if too large
   let content = raw.content || undefined;
-  if (content && Buffer.byteLength(content, 'utf-8') > env.MAX_CONTENT_SIZE_BYTES) {
+  if (content && Buffer.byteLength(content, 'utf-8') > config.content.max_size_bytes) {
     // Truncate at byte level, then remove any trailing incomplete UTF-8 character
     content = Buffer.from(content, 'utf-8')
-      .subarray(0, env.MAX_CONTENT_SIZE_BYTES)
+      .subarray(0, config.content.max_size_bytes)
       .toString('utf-8')
       .replace(/\uFFFD/g, '');
-    log.debug({ url: canonicalUrl }, 'Content truncated to MAX_CONTENT_SIZE_BYTES');
+    log.debug({ url: canonicalUrl }, 'Content truncated to max_size_bytes');
   }
 
   const summary = raw.contentSnippet || raw.title;

@@ -1,13 +1,13 @@
 import { Redis } from 'ioredis';
-import { getEnv } from '../config/env.js';
+import { getConfig } from '../config/config.js';
 import { logger } from '../shared/logger.js';
 
 let _connection: Redis | null = null;
 
 export function getRedisConnection(): Redis {
   if (!_connection) {
-    const env = getEnv();
-    _connection = new Redis(env.REDIS_URL, {
+    const config = getConfig();
+    _connection = new Redis(config.redis.url, {
       maxRetriesPerRequest: null, // Required by BullMQ
       enableReadyCheck: true,
       retryStrategy(times: number) {
@@ -26,8 +26,8 @@ export function getRedisConnection(): Redis {
 }
 
 export function createRedisConnection(): Redis {
-  const env = getEnv();
-  return new Redis(env.REDIS_URL, {
+  const config = getConfig();
+  return new Redis(config.redis.url, {
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
     retryStrategy(times: number) {
