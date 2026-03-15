@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "title": "New AI Model Breaks Performance Records",
+      "link": "https://tech.example.com/ai-model-records",
+      "id": "tech-001",
+      "pubDate": "2026-03-15T10:00:00.000Z",
+      "description": "A new AI model has achieved state-of-the-art results on multiple benchmarks.",
+      "content": "A new AI model has achieved state-of-the-art results on multiple benchmarks, surpassing previous records by significant margins."
+    },
+    {
+      "title": "Major Cloud Outage Affects Millions of Users",
+      "link": "https://tech.example.com/cloud-outage?ref=feed",
+      "id": "tech-002",
+      "pubDate": "2026-03-15T09:30:00.000Z",
+      "description": "A widespread cloud service outage has affected millions of users worldwide."
+    },
+    {
+      "title": "Startup Raises Record Series B Funding Round",
+      "link": "https://tech.example.com/startup-funding",
+      "id": "tech-003",
+      "pubDate": "2026-03-15T08:00:00.000Z",
+      "description": "An AI startup has raised a record-breaking Series B round."
+    }
+  ]
+}
