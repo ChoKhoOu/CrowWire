@@ -1,5 +1,4 @@
 import type { Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
 import { events } from '../../db/schema.js';
 import { getRedisConnection } from '../../queue/connection.js';

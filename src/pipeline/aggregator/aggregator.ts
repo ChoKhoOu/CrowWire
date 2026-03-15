@@ -66,11 +66,6 @@ export async function buildBundle(bundleType: 'urgent' | 'batch'): Promise<Event
   return bundle;
 }
 
-export async function clearBundleState(_bundleType: 'urgent' | 'batch'): Promise<void> {
-  // State is now cleared atomically in buildBundle() via RENAME + DEL
-  // This function is kept for API compatibility but is a no-op
-}
-
 export function formatStructuredText(events: ScoredEvent[]): string {
   const lines = events.map(e => {
     const tags = e.category_tags.join(', ');

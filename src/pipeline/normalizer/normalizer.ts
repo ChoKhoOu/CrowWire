@@ -30,8 +30,8 @@ export function normalize(raw: RawFeedItem, feedConfig: FeedConfig): CrowWireEve
 
   const summary = raw.contentSnippet || raw.title;
   const publishedAt = raw.isoDate ? new Date(raw.isoDate) : (raw.pubDate ? new Date(raw.pubDate) : new Date());
-  const identityHash = computeIdentityHash(raw.guid, canonicalUrl);
-  const contentHash = computeContentHash(raw.title, summary, content);
+  const identityHash = createHash('sha256').update(raw.guid || canonicalUrl).digest('hex');
+  const contentHash = createHash('sha256').update(`${raw.title}\n${summary}\n${content || ''}`).digest('hex');
 
   return {
     id: uuidv7(),
@@ -49,14 +49,4 @@ export function normalize(raw: RawFeedItem, feedConfig: FeedConfig): CrowWireEve
     content_hash: contentHash,
     tags: feedConfig.tags,
   };
-}
-
-function computeIdentityHash(guid: string | undefined, canonicalUrl: string): string {
-  const input = guid || canonicalUrl;
-  return createHash('sha256').update(input).digest('hex');
-}
-
-function computeContentHash(title: string, summary: string, content?: string): string {
-  const input = `${title}\n${summary}\n${content || ''}`;
-  return createHash('sha256').update(input).digest('hex');
 }
