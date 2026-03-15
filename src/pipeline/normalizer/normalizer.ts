@@ -20,7 +20,11 @@ export function normalize(raw: RawFeedItem, feedConfig: FeedConfig): CrowWireEve
   // Truncate content if too large
   let content = raw.content || undefined;
   if (content && Buffer.byteLength(content, 'utf-8') > env.MAX_CONTENT_SIZE_BYTES) {
-    content = Buffer.from(content, 'utf-8').subarray(0, env.MAX_CONTENT_SIZE_BYTES).toString('utf-8');
+    // Truncate at byte level, then remove any trailing incomplete UTF-8 character
+    content = Buffer.from(content, 'utf-8')
+      .subarray(0, env.MAX_CONTENT_SIZE_BYTES)
+      .toString('utf-8')
+      .replace(/\uFFFD/g, '');
     log.debug({ url: canonicalUrl }, 'Content truncated to MAX_CONTENT_SIZE_BYTES');
   }
 

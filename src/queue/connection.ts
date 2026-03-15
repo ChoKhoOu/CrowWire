@@ -25,6 +25,17 @@ export function getRedisConnection(): Redis {
   return _connection;
 }
 
+export function createRedisConnection(): Redis {
+  const env = getEnv();
+  return new Redis(env.REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+    retryStrategy(times: number) {
+      return Math.min(times * 200, 5000);
+    },
+  });
+}
+
 export async function closeRedis(): Promise<void> {
   if (_connection) {
     await _connection.quit();

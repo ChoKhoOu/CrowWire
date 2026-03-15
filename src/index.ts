@@ -1,4 +1,6 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import { loadEnv } from './config/env.js';
 import { logger } from './shared/logger.js';
 import { QUEUE_NAMES } from './config/constants.js';
@@ -9,7 +11,7 @@ import { setupFeedSchedulers, removeFeedSchedulers } from './queue/scheduler.js'
 import { registerWorker, pauseAllWorkers, closeAllWorkers } from './queue/workers.js';
 import { getQueues, closeQueues } from './queue/queues.js';
 import { closeRedis } from './queue/connection.js';
-import { closeDb } from './db/client.js';
+import { closeDb, getPool } from './db/client.js';
 import { DEFAULTS } from './config/constants.js';
 import { processIngestJob } from './pipeline/ingestor/ingestor.js';
 import { processScoreJob } from './pipeline/scorer/scorer.js';
@@ -23,10 +25,24 @@ async function main() {
   const env = loadEnv();
   logger.info({ nodeEnv: env.NODE_ENV }, 'Starting CrowWire');
 
+  // Verify database schema exists
+  try {
+    const pool = getPool();
+    const client = await pool.connect();
+    await client.query('SELECT 1 FROM events LIMIT 0');
+    client.release();
+    logger.info('Database schema verified');
+  } catch (err) {
+    logger.fatal({ err }, 'Database schema not found. Run "npm run db:push" to create tables.');
+    process.exit(1);
+  }
+
   // Initialize Fastify
   const app = Fastify({ logger: false });
 
   // Register plugins and routes
+  await app.register(helmet);
+  await app.register(cors, { origin: false });
   await app.register(errorHandler);
   await app.register(healthRoutes);
   await app.register(metricsRoute);

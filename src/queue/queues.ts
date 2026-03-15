@@ -1,12 +1,12 @@
 import { Queue } from 'bullmq';
-import { getRedisConnection } from './connection.js';
+import { createRedisConnection } from './connection.js';
 import { QUEUE_NAMES } from '../config/constants.js';
 
 let _queues: Record<string, Queue> | null = null;
 
 export function getQueues() {
   if (!_queues) {
-    const connection = getRedisConnection();
+    const connection = createRedisConnection();
     _queues = {
       ingest: new Queue(QUEUE_NAMES.INGEST, { connection }),
       score: new Queue(QUEUE_NAMES.SCORE, { connection }),

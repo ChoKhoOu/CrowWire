@@ -8,7 +8,7 @@ import { fetchRSSHubFeed } from './rsshub-client.js';
 import { normalize } from '../normalizer/normalizer.js';
 import { deduplicate } from '../deduper/deduper.js';
 import { TransientError, PermanentError } from '../../types/errors.js';
-import { eventsIngestedTotal, dedupChecksTotal, feedErrorsTotal } from '../../shared/metrics.js';
+import { eventsIngestedTotal, dedupChecksTotal, feedErrorsTotal, feedPaused } from '../../shared/metrics.js';
 import type { FeedConfig } from '../../types/feed.js';
 
 const log = createChildLogger({ module: 'ingestor' });
@@ -22,6 +22,15 @@ export async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
   const { feedName, feedConfig } = job.data;
   const redis = getRedisConnection();
   const { score } = getQueues();
+
+  // Check if feed is paused due to consecutive failures
+  const pauseCheckKey = `${REDIS_KEYS.FEED_ERRORS_PREFIX}${feedName}`;
+  const currentErrorCount = await redis.get(pauseCheckKey);
+  if (currentErrorCount && parseInt(currentErrorCount, 10) >= DEFAULTS.MAX_FEED_CONSECUTIVE_FAILURES) {
+    feedPaused.set({ feed_name: feedName }, 1);
+    log.warn({ feed: feedName, errorCount: parseInt(currentErrorCount, 10) }, 'Feed paused due to consecutive failures, skipping');
+    return;
+  }
 
   log.info({ feed: feedName, type: feedConfig.source_type }, 'Processing ingest job');
 

@@ -1,8 +1,8 @@
 import { uuidv7 } from 'uuidv7';
-import { eq, and } from 'drizzle-orm';
 import { getDb } from '../../db/client.js';
 import { deliveryLog } from '../../db/schema.js';
 import { getEnv } from '../../config/env.js';
+import { hasSuccessfulDelivery } from './audit-log.js';
 import { DEFAULTS } from '../../config/constants.js';
 import { createChildLogger } from '../../shared/logger.js';
 import { TransientError, PermanentError, FatalError } from '../../types/errors.js';
@@ -18,18 +18,7 @@ export class OpenClawBridge {
     const startTime = Date.now();
 
     // Check for idempotent skip
-    const db = getDb();
-    const existing = await db.select()
-      .from(deliveryLog)
-      .where(
-        and(
-          eq(deliveryLog.idempotency_key, bundle.idempotency_key),
-          eq(deliveryLog.success, true)
-        )
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
+    if (await hasSuccessfulDelivery(bundle.idempotency_key)) {
       log.info({ bundleId: bundle.bundle_id, idempotencyKey: bundle.idempotency_key }, 'Idempotent skip: already delivered');
       const result: DeliveryResult = {
         success: true,
@@ -66,11 +55,12 @@ export class OpenClawBridge {
       });
 
       const duration = Date.now() - startTime;
+      const responseText = await response.text();
       let responseBody: unknown;
       try {
-        responseBody = await response.json();
+        responseBody = JSON.parse(responseText);
       } catch {
-        responseBody = await response.text().catch(() => null);
+        responseBody = responseText;
       }
 
       const result: DeliveryResult = {

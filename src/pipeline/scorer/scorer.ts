@@ -10,6 +10,7 @@ import { createChildLogger } from '../../shared/logger.js';
 import { ModelClient } from './model-client.js';
 import { TransientError, PermanentError } from '../../types/errors.js';
 import { eventsScoredTotal, scoringDuration, modelApiErrorsTotal } from '../../shared/metrics.js';
+import { modelCircuitBreaker } from '../../shared/circuit-breaker.js';
 import type { CrowWireEvent, ScoredEvent } from '../../types/event.js';
 
 const log = createChildLogger({ module: 'scorer' });
@@ -32,7 +33,16 @@ interface ScoreJobData {
 }
 
 export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
-  const { event } = job.data;
+  if (modelCircuitBreaker.isOpen()) {
+    throw new TransientError('Circuit breaker open, refusing scoring request');
+  }
+
+  const { event: rawEvent } = job.data;
+  const event: CrowWireEvent = {
+    ...rawEvent,
+    published_at: new Date(rawEvent.published_at),
+    ingested_at: new Date(rawEvent.ingested_at),
+  };
   const env = getEnv();
 
   log.info({ eventId: event.id, title: event.title }, 'Scoring event');
@@ -43,6 +53,7 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
     // 1. Score with AI model
     const modelClient = getModelClient();
     const scoreResult = await modelClient.score(event);
+    modelCircuitBreaker.recordSuccess();
 
     // 2. Route inline
     const routing = scoreResult.urgency_score >= env.URGENT_SCORE_THRESHOLD ? 'urgent' : 'batch';
@@ -94,12 +105,12 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
     const metaKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_META : REDIS_KEYS.BUNDLE_BATCH_META;
     const eventsKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_EVENTS : REDIS_KEYS.BUNDLE_BATCH_EVENTS;
 
-    await redis.hincrby(metaKey, 'event_count', 1);
-    await redis.hset(metaKey, 'last_updated', Date.now().toString());
-    if (!(await redis.hexists(metaKey, 'created_at'))) {
-      await redis.hset(metaKey, 'created_at', Date.now().toString());
-    }
-    await redis.sadd(eventsKey, JSON.stringify(scoredEvent));
+    const accumPipeline = redis.multi();
+    accumPipeline.hincrby(metaKey, 'event_count', 1);
+    accumPipeline.hset(metaKey, 'last_updated', Date.now().toString());
+    accumPipeline.hsetnx(metaKey, 'created_at', Date.now().toString());
+    accumPipeline.sadd(eventsKey, JSON.stringify(scoredEvent));
+    await accumPipeline.exec();
 
     // 6. Check batch early flush threshold
     if (bundleType === 'batch') {
@@ -125,6 +136,7 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
 
   } catch (error) {
     scoreTimer();
+    modelCircuitBreaker.recordFailure();
     modelApiErrorsTotal.inc({ error_type: error instanceof PermanentError ? 'permanent' : 'transient' });
 
     if (error instanceof PermanentError) {

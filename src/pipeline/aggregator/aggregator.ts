@@ -11,11 +11,24 @@ const log = createChildLogger({ module: 'aggregator' });
 export async function buildBundle(bundleType: 'urgent' | 'batch'): Promise<EventBundle | null> {
   const redis = getRedisConnection();
   const eventsKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_EVENTS : REDIS_KEYS.BUNDLE_BATCH_EVENTS;
+  const metaKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_META : REDIS_KEYS.BUNDLE_BATCH_META;
 
-  // Read all events from Redis SET
-  const eventJsons = await redis.smembers(eventsKey);
-  if (eventJsons.length === 0) {
+  // Atomically move events to a temp key to prevent race with scorer SADD
+  const tempKey = `${eventsKey}:flushing:${Date.now()}`;
+  try {
+    await redis.rename(eventsKey, tempKey);
+  } catch {
+    // Key doesn't exist — no events to flush
     log.debug({ bundleType }, 'No events in bundle, skipping flush');
+    return null;
+  }
+
+  const eventJsons = await redis.smembers(tempKey);
+  // Clean up temp key and meta key
+  await redis.del(tempKey);
+  await redis.del(metaKey);
+
+  if (eventJsons.length === 0) {
     return null;
   }
 
@@ -53,18 +66,9 @@ export async function buildBundle(bundleType: 'urgent' | 'batch'): Promise<Event
   return bundle;
 }
 
-export async function clearBundleState(bundleType: 'urgent' | 'batch'): Promise<void> {
-  const redis = getRedisConnection();
-  const metaKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_META : REDIS_KEYS.BUNDLE_BATCH_META;
-  const eventsKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_EVENTS : REDIS_KEYS.BUNDLE_BATCH_EVENTS;
-
-  // Atomic delete via MULTI/EXEC
-  const pipeline = redis.multi();
-  pipeline.del(metaKey);
-  pipeline.del(eventsKey);
-  await pipeline.exec();
-
-  log.debug({ bundleType }, 'Bundle state cleared');
+export async function clearBundleState(_bundleType: 'urgent' | 'batch'): Promise<void> {
+  // State is now cleared atomically in buildBundle() via RENAME + DEL
+  // This function is kept for API compatibility but is a no-op
 }
 
 export function formatStructuredText(events: ScoredEvent[]): string {

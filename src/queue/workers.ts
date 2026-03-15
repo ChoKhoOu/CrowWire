@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { getRedisConnection } from './connection.js';
+import { createRedisConnection } from './connection.js';
 import { QUEUE_NAMES } from '../config/constants.js';
 import { getEnv } from '../config/env.js';
 import { logger } from '../shared/logger.js';
@@ -11,7 +11,7 @@ export function registerWorker(
   processor: (job: any) => Promise<any>,
   opts?: { concurrency?: number; limiter?: { max: number; duration: number } }
 ): Worker {
-  const connection = getRedisConnection();
+  const connection = createRedisConnection();
   const worker = new Worker(queueName, processor, {
     connection,
     concurrency: opts?.concurrency,
