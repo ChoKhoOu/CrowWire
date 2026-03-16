@@ -58,7 +58,7 @@ export function createDeliverProcessor() {
     log.info({ targetName: target_name, bundleId: payload.bundle.bundle_id }, 'Delivering to target');
 
     const adapter = getAdapter(target_name);
-    await adapter.deliver(payload, job.attemptsMade + 1);
+    await adapter.deliver(payload);
 
     log.info({ targetName: target_name, bundleId: payload.bundle.bundle_id }, 'Delivery complete');
   };

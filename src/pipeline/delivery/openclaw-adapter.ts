@@ -1,7 +1,7 @@
 import { DEFAULTS } from '../../config/constants.js';
 import { TransientError, PermanentError, FatalError } from '../../types/errors.js';
 import { eventsDeliveredTotal, deliveryDuration } from '../../shared/metrics.js';
-import { checkIdempotency, writeAuditLog } from './audit-log.js';
+import { checkIdempotency, markDelivered } from './audit-log.js';
 import type { FlushPayload, DeliveryResult } from '../../types/delivery.js';
 import type { DeliveryAdapter } from './types.js';
 
@@ -20,16 +20,14 @@ export class OpenClawAdapter implements DeliveryAdapter {
     this.config = config;
   }
 
-  async deliver(payload: FlushPayload, attemptNumber: number): Promise<DeliveryResult> {
+  async deliver(payload: FlushPayload): Promise<DeliveryResult> {
     const { bundle, message } = payload;
     const startTime = Date.now();
     const targetName = this.config.name;
 
-    // Check for idempotent skip
-    const skip = await checkIdempotency(bundle.idempotency_key, targetName, bundle.bundle_id, attemptNumber);
+    const skip = await checkIdempotency(bundle.idempotency_key, targetName, bundle.bundle_id);
     if (skip) return skip;
 
-    // Build OpenClaw-specific request body
     const url = `${this.config.gateway_url}${this.config.hooks_path}/agent`;
     const body = {
       message,
@@ -53,19 +51,12 @@ export class OpenClawAdapter implements DeliveryAdapter {
       });
 
       const duration = Date.now() - startTime;
-      const responseText = await response.text();
-      let responseBody: unknown;
-      try {
-        responseBody = JSON.parse(responseText);
-      } catch {
-        responseBody = responseText;
-      }
+      const success = response.status === 200 || response.status === 202;
 
       const result: DeliveryResult = {
-        success: response.status === 202 || response.status === 200,
+        success,
         status_code: response.status,
         target_name: targetName,
-        response_body: responseBody,
         attempted_at: new Date(),
         duration_ms: duration,
       };
@@ -73,9 +64,10 @@ export class OpenClawAdapter implements DeliveryAdapter {
       deliveryDuration.observe(duration / 1000);
       eventsDeliveredTotal.inc({ bundle_type: bundle.bundle_type, success: String(result.success) });
 
-      await writeAuditLog(bundle.bundle_id, bundle.bundle_type, bundle.event_count, attemptNumber, response.status, result.success, result.success ? undefined : `HTTP ${response.status}`, duration, bundle.idempotency_key, targetName);
+      if (success) {
+        await markDelivered(bundle.idempotency_key, targetName);
+      }
 
-      // Classify errors
       if (response.status === 401) {
         throw new FatalError(`OpenClaw auth failed (401): invalid token`);
       }
@@ -92,15 +84,9 @@ export class OpenClawAdapter implements DeliveryAdapter {
       return result;
 
     } catch (error) {
-      const duration = Date.now() - startTime;
-
       if (error instanceof FatalError || error instanceof PermanentError || error instanceof TransientError) {
-        await writeAuditLog(bundle.bundle_id, bundle.bundle_type, bundle.event_count, attemptNumber, 0, false, error.message, duration, bundle.idempotency_key, targetName);
         throw error;
       }
-
-      // Timeout or network error
-      await writeAuditLog(bundle.bundle_id, bundle.bundle_type, bundle.event_count, attemptNumber, 0, false, error instanceof Error ? error.message : String(error), duration, bundle.idempotency_key, targetName);
       throw new TransientError(`OpenClaw delivery failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
