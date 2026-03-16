@@ -1,57 +1,16 @@
 services:
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes --appendfsync everysec
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - crowwire-net
-
   rsshub:
-    image: diygod/rsshub
-    environment:
-      CACHE_TYPE: redis
-      REDIS_URL: redis://redis:6379/
-      CACHE_EXPIRE: 300
-      CACHE_CONTENT_EXPIRE: 3600
+    image: diygod/rsshub:latest
+    restart: unless-stopped
     ports:
       - "1200:1200"
-    depends_on:
-      redis:
-        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - CACHE_TYPE=memory
+      - CACHE_EXPIRE=300
+      - REQUEST_TIMEOUT=30000
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:1200/"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "wget", "-qO-", "http://localhost:1200"]
+      interval: 30s
+      timeout: 10s
       retries: 3
-    networks:
-      - crowwire-net
-
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-    depends_on:
-      redis:
-        condition: service_healthy
-      rsshub:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - crowwire-net
-
-networks:
-  crowwire-net:
-    driver: bridge
-
-volumes:
-  redis_data:
