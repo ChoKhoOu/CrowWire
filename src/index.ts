@@ -11,7 +11,6 @@ import { setupFeedSchedulers, removeFeedSchedulers } from './queue/scheduler.js'
 import { registerWorker, pauseAllWorkers, closeAllWorkers } from './queue/workers.js';
 import { getQueues, closeQueues } from './queue/queues.js';
 import { closeRedis } from './queue/connection.js';
-import { closeDb, getPool } from './db/client.js';
 import { DEFAULTS } from './config/constants.js';
 import { processIngestJob } from './pipeline/ingestor/ingestor.js';
 import { processScoreJob } from './pipeline/scorer/scorer.js';
@@ -23,18 +22,6 @@ import { queueDepth, dlqDepth } from './shared/metrics.js';
 async function main() {
   const config = loadConfig();
   logger.info({ nodeEnv: config.server.node_env }, 'Starting CrowWire');
-
-  // Verify database schema exists
-  try {
-    const pool = getPool();
-    const client = await pool.connect();
-    await client.query('SELECT 1 FROM events LIMIT 0');
-    client.release();
-    logger.info('Database schema verified');
-  } catch (err) {
-    logger.fatal({ err }, 'Database schema not found. Run "npm run db:push" to create tables.');
-    process.exit(1);
-  }
 
   // Initialize Fastify
   const app = Fastify({ logger: false });
@@ -149,9 +136,6 @@ async function main() {
 
     await closeRedis();
     logger.info('Redis closed');
-
-    await closeDb();
-    logger.info('Postgres closed');
 
     logger.info('Graceful shutdown complete');
     process.exit(0);

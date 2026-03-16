@@ -14,7 +14,6 @@ import type { Config } from '../../config/config.js';
  */
 export const TEST_CONFIG_DEFAULTS = {
   server: { port: 3000, node_env: 'test' as const, log_level: 'error' as const },
-  database: { url: 'postgresql://test:test@localhost:5432/test' },
   redis: { url: 'redis://localhost:6379' },
   llm: { provider: 'openai' as const, api_key: 'test-key', base_url: 'http://localhost:9999/v1', scoring_model: 'test-model', summarization_model: 'test-model' },
   feeds: { rsshub_base_url: 'http://localhost:1200', sources: [] as Config['feeds']['sources'] },

@@ -56,9 +56,6 @@ const configSchema = z.object({
     node_env: z.enum(['development', 'production', 'test']).default('development'),
     log_level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   }).default({}),
-  database: z.object({
-    url: z.string().min(1),
-  }),
   redis: z.object({
     url: z.string().min(1).default('redis://localhost:6379'),
   }).default({}),

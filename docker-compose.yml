@@ -1,22 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: crowwire
-      POSTGRES_PASSWORD: crowwire
-      POSTGRES_DB: crowwire
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crowwire"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - crowwire-net
-
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --appendfsync everysec
@@ -59,8 +41,6 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       rsshub:
@@ -74,5 +54,4 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
   redis_data:

@@ -3,9 +3,6 @@ server:
   node_env: development
   log_level: info
 
-database:
-  url: postgresql://crowwire:crowwire@postgres:5432/crowwire
-
 redis:
   url: redis://redis:6379
 

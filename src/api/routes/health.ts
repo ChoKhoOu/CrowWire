@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import { checkDbConnection } from '../../db/client.js';
 import { checkRedisConnection } from '../../queue/connection.js';
 
 export async function healthRoutes(fastify: FastifyInstance): Promise<void> {
@@ -9,7 +8,6 @@ export async function healthRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.get('/ready', async (_request, reply) => {
     const checks = {
-      postgres: await checkDbConnection(),
       redis: await checkRedisConnection(),
     };
 

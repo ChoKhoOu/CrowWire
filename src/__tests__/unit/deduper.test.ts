@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../../config/config.js', () => {
   const cfg = {
     server: { port: 3000, node_env: 'test', log_level: 'error' },
-    database: { url: 'postgresql://test:test@localhost:5432/test' },
     redis: { url: 'redis://localhost:6379' },
     llm: { provider: 'openai', api_key: 'test-key', base_url: 'http://localhost:9999/v1', scoring_model: 'test-model', summarization_model: 'test-model' },
     feeds: { rsshub_base_url: 'http://localhost:1200', sources: [] },

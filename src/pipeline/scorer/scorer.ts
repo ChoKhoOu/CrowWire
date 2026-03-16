@@ -1,6 +1,4 @@
 import type { Job } from 'bullmq';
-import { getDb } from '../../db/client.js';
-import { events } from '../../db/schema.js';
 import { getRedisConnection } from '../../queue/connection.js';
 import { getQueues } from '../../queue/queues.js';
 import { getConfig } from '../../config/config.js';
@@ -65,33 +63,7 @@ export async function processScoreJob(job: Job<ScoreJobData>): Promise<void> {
       scored_at: new Date(),
     };
 
-    // 4. Persist to Postgres
-    const db = getDb();
-    await db.insert(events).values({
-      id: scoredEvent.id,
-      source_type: scoredEvent.source_type,
-      source_name: scoredEvent.source_name,
-      source_route: scoredEvent.source_route,
-      guid: scoredEvent.guid,
-      canonical_url: scoredEvent.canonical_url,
-      title: scoredEvent.title,
-      summary: scoredEvent.summary,
-      content: scoredEvent.content,
-      published_at: scoredEvent.published_at,
-      ingested_at: scoredEvent.ingested_at,
-      identity_hash: scoredEvent.identity_hash,
-      content_hash: scoredEvent.content_hash,
-      tags: scoredEvent.tags,
-      urgency_score: scoredEvent.urgency_score,
-      relevance_score: scoredEvent.relevance_score,
-      novelty_score: scoredEvent.novelty_score,
-      category_tags: scoredEvent.category_tags,
-      score_reason: scoredEvent.score_reason,
-      routing: scoredEvent.routing,
-      scored_at: scoredEvent.scored_at,
-    }).onConflictDoNothing();
-
-    // 5. Accumulate into Redis bundle state
+    // 4. Accumulate into Redis bundle state (PostgreSQL persistence removed)
     const redis = getRedisConnection();
     const bundleType = routing;
     const metaKey = bundleType === 'urgent' ? REDIS_KEYS.BUNDLE_URGENT_META : REDIS_KEYS.BUNDLE_BATCH_META;
