@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FEEDS_YAML="$SCRIPT_DIR/feeds.yaml"
 LOBSTER_FILE="$SCRIPT_DIR/crowwire.lobster"
 DB_PATH="$SCRIPT_DIR/crowwire.db"
+DEPLOY_CONFIG="$SCRIPT_DIR/crowwire.local.json"
 SKILL_DIR="$HOME/.openclaw/workspace/skills/crowwire"
 OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
 VERSION_FILE="$SCRIPT_DIR/.installed-version"
@@ -134,17 +135,43 @@ else
 fi
 
 # ------------------------------------------------------------------
-# Step 4: Update .lobster workflow paths (idempotent)
+# Step 4: Deploy config (crowwire.local.json)
 # ------------------------------------------------------------------
-step "同步工作流路径..."
+step "检查部署配置..."
 
-# Replace both default and any previous absolute paths
-sed -i.bak \
-    -e "s|default: \".*feeds\.yaml\"|default: \"$FEEDS_YAML\"|g" \
-    -e "s|default: \".*crowwire\.db\"|default: \"$DB_PATH\"|g" \
-    "$LOBSTER_FILE"
-rm -f "${LOBSTER_FILE}.bak"
-info "工作流路径已同步"
+if [ -f "$DEPLOY_CONFIG" ]; then
+    # Update: preserve channel/target, only sync paths
+    node -e "
+      const fs = require('fs');
+      const cfg = JSON.parse(fs.readFileSync('$DEPLOY_CONFIG', 'utf8'));
+      cfg.config = '$FEEDS_YAML';
+      cfg.db = '$DB_PATH';
+      fs.writeFileSync('$DEPLOY_CONFIG', JSON.stringify(cfg, null, 2) + '\n');
+    "
+    info "已同步路径（channel/target 保持不变）"
+else
+    # First install: create with placeholders
+    node -e "
+      const fs = require('fs');
+      const cfg = {
+        channel: 'discord',
+        target: 'channel:YOUR_CHANNEL_ID',
+        config: '$FEEDS_YAML',
+        db: '$DB_PATH',
+        cron: '*/2 * * * *',
+        tz: 'Asia/Shanghai'
+      };
+      fs.writeFileSync('$DEPLOY_CONFIG', JSON.stringify(cfg, null, 2) + '\n');
+    "
+    info "已创建部署配置: $DEPLOY_CONFIG"
+    warn "请编辑 $DEPLOY_CONFIG 填入你的 channel 和 target"
+fi
+
+# Build --args-json from deploy config for cron / skill usage
+ARGS_JSON=$(node -e "
+  const cfg = JSON.parse(require('fs').readFileSync('$DEPLOY_CONFIG', 'utf8'));
+  console.log(JSON.stringify({ channel: cfg.channel, target: cfg.target, config: cfg.config, db: cfg.db }));
+")
 
 # ------------------------------------------------------------------
 # Step 5: Register / update OpenClaw Skill
@@ -160,17 +187,17 @@ description: CrowWire financial news monitoring pipeline — fetches RSS, dedupl
 
 You have access to the CrowWire news monitoring pipeline.
 
-## Run the full pipeline
+## Run the full pipeline (uses deploy config)
 
 \`\`\`bash
-lobster run $LOBSTER_FILE
+lobster run $LOBSTER_FILE --args-json '$ARGS_JSON'
 \`\`\`
 
-## Run with custom args
+## Deploy config
 
-\`\`\`bash
-lobster run $LOBSTER_FILE --args-json '{"config":"$FEEDS_YAML","db":"$DB_PATH","channel":"discord","target":"channel:YOUR_CHANNEL_ID"}'
-\`\`\`
+Local deployment settings are stored in \`$DEPLOY_CONFIG\`.
+Edit this file to change channel, target, cron interval, or timezone.
+The lobster workflow template (\`crowwire.lobster\`) should not be modified directly.
 
 ## Pipeline stages
 
@@ -224,18 +251,21 @@ fi
 # ------------------------------------------------------------------
 # Step 7: Cron job (only on first install)
 # ------------------------------------------------------------------
+CRON_EXPR=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$DEPLOY_CONFIG','utf8')).cron || '*/2 * * * *')")
+CRON_TZ=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$DEPLOY_CONFIG','utf8')).tz || 'Asia/Shanghai')")
+
 if [ "$MODE" = "install" ]; then
     step "设置定时任务..."
     echo ""
-    echo "运行以下命令添加每 2 分钟的定时任务："
+    echo "运行以下命令添加定时任务："
     echo ""
     echo -e "  ${GREEN}openclaw cron add \\\\${NC}"
     echo -e "  ${GREEN}  --name \"crowwire-news-monitor\" \\\\${NC}"
-    echo -e "  ${GREEN}  --cron \"*/2 * * * *\" \\\\${NC}"
-    echo -e "  ${GREEN}  --tz \"Asia/Shanghai\" \\\\${NC}"
+    echo -e "  ${GREEN}  --cron \"$CRON_EXPR\" \\\\${NC}"
+    echo -e "  ${GREEN}  --tz \"$CRON_TZ\" \\\\${NC}"
     echo -e "  ${GREEN}  --session isolated \\\\${NC}"
     echo -e "  ${GREEN}  --sessionTarget \"session:crowwire-monitor\" \\\\${NC}"
-    echo -e "  ${GREEN}  --message \"Run the CrowWire pipeline: lobster run $LOBSTER_FILE\"${NC}"
+    echo -e "  ${GREEN}  --message \"Run the CrowWire pipeline: lobster run $LOBSTER_FILE --args-json '$ARGS_JSON'\"${NC}"
     echo ""
 else
     step "定时任务无需修改（已在首次安装时配置）"
@@ -260,12 +290,13 @@ echo ""
 echo "  RSSHub:        http://localhost:1200"
 echo "  Feeds 配置:    $FEEDS_YAML"
 echo "  数据库:        $DB_PATH"
-echo "  工作流:        $LOBSTER_FILE"
+echo "  部署配置:      $DEPLOY_CONFIG"
+echo "  工作流模板:    $LOBSTER_FILE"
 echo "  Skill:         $SKILL_DIR/SKILL.md"
 echo ""
 echo "快速测试："
 echo "  crowwire-cli fetch --config $FEEDS_YAML | head -c 200"
 echo ""
 echo "完整 Pipeline："
-echo "  lobster run $LOBSTER_FILE"
+echo "  lobster run $LOBSTER_FILE --args-json '$ARGS_JSON'"
 echo ""

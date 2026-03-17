@@ -1,9 +1,9 @@
 name: crowwire-news-monitor
 args:
   config:
-    default: "/opt/crowwire/feeds.yaml"
+    default: "./feeds.yaml"
   db:
-    default: "/opt/crowwire/crowwire.db"
+    default: "./crowwire.db"
   channel:
     default: "discord"
   target:
