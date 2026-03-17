@@ -8,36 +8,32 @@ args:
     default: "news"
 steps:
   - id: fetch
-    command: crowwire-cli fetch --config $args.config
+    run: crowwire-cli fetch --config ${config}
 
   - id: dedup
-    command: crowwire-cli dedup --db $args.db
+    run: crowwire-cli dedup --db ${db}
     stdin: $fetch.stdout
 
   - id: score
-    command: crowwire-cli score
+    run: crowwire-cli score
     stdin: $dedup.stdout
 
   - id: classify
-    command: crowwire-cli classify --db $args.db --similarity-threshold 0.55 --sent-event-ttl 24
+    run: crowwire-cli classify --db ${db} --similarity-threshold 0.55 --sent-event-ttl 24
     stdin: $score.stdout
 
   - id: deliver-urgent
-    command: crowwire-cli format --type urgent
+    run: crowwire-cli format --type urgent
     stdin: $classify.stdout
-    condition: $classify.json.has_urgent
 
   - id: send-urgent
-    command: crowwire-cli send --channel $args.channel
+    run: crowwire-cli send --channel ${channel}
     stdin: $deliver-urgent.stdout
-    condition: $classify.json.has_urgent
 
   - id: deliver-digest
-    command: crowwire-cli format --type digest
+    run: crowwire-cli format --type digest
     stdin: $classify.stdout
-    condition: $classify.json.has_digest
 
   - id: send-digest
-    command: crowwire-cli send --channel $args.channel
+    run: crowwire-cli send --channel ${channel}
     stdin: $deliver-digest.stdout
-    condition: $classify.json.has_digest

@@ -173,7 +173,7 @@ fetch → dedup → score → classify → format → send
 - Node.js >= 22
 - Docker（用于 RSSHub）
 - [OpenClaw](https://github.com/openclaw/openclaw)（`npm i -g openclaw@latest && openclaw onboard --install-daemon`）
-- [Lobster](https://github.com/openclaw/lobster)（安装脚本会自动安装，也可手动：`npm i -g @openclaw/lobster@latest`）
+- [Lobster](https://github.com/openclaw/lobster)（安装脚本会自动安装，也可手动：`npm i -g @clawdbot/lobster@latest`）
 
 ## 配置
 

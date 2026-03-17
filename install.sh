@@ -57,8 +57,8 @@ info "OpenClaw OK"
 
 if ! command -v lobster >/dev/null 2>&1; then
     warn "未找到 Lobster CLI，正在自动安装..."
-    npm install -g @openclaw/lobster@latest 2>/dev/null || sudo npm install -g @openclaw/lobster@latest
-    command -v lobster >/dev/null 2>&1 || fail "Lobster 安装失败，请手动运行: npm install -g @openclaw/lobster@latest"
+    npm install -g @clawdbot/lobster@latest 2>/dev/null || sudo npm install -g @clawdbot/lobster@latest
+    command -v lobster >/dev/null 2>&1 || fail "Lobster 安装失败，请手动运行: npm install -g @clawdbot/lobster@latest"
 fi
 info "Lobster OK ($(lobster --version 2>/dev/null || echo 'installed'))"
 
