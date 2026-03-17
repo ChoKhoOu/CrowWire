@@ -55,6 +55,16 @@ info "Docker Compose OK"
 command -v openclaw >/dev/null 2>&1 || fail "未找到 OpenClaw，请运行: npm install -g openclaw@latest && openclaw onboard --install-daemon"
 info "OpenClaw OK"
 
+if ! command -v lobster >/dev/null 2>&1; then
+    warn "未找到 Lobster CLI，正在自动安装..."
+    npm install -g @openclaw/lobster@latest 2>/dev/null || sudo npm install -g @openclaw/lobster@latest
+    command -v lobster >/dev/null 2>&1 || fail "Lobster 安装失败，请手动运行: npm install -g @openclaw/lobster@latest"
+fi
+info "Lobster OK ($(lobster --version 2>/dev/null || echo 'installed'))"
+
+# Verify openclaw.invoke shim (comes with lobster)
+command -v openclaw.invoke >/dev/null 2>&1 || warn "openclaw.invoke 未在 PATH 中，部分功能（LLM 评分、消息发送）将降级运行"
+
 # ------------------------------------------------------------------
 # Step 1: RSSHub
 # ------------------------------------------------------------------
@@ -167,7 +177,7 @@ lobster run $LOBSTER_FILE --args-json '{"config":"$FEEDS_YAML","db":"$DB_PATH","
 1. **fetch** — pull latest articles from RSS feeds (Bloomberg, Jin10, Wallstreetcn, CLS)
 2. **dedup** — skip already-seen items (SQLite identity/content hash)
 3. **score** — LLM scores each item for urgency/relevance/novelty (0-100)
-4. **classify** — urgent (>= 85) sent immediately; others buffered for digest
+4. **classify** — urgent (>= 75) sent immediately; others buffered for digest
 5. **format** — render as urgent alert or digest summary (Chinese output)
 6. **send** — deliver to configured channel
 
