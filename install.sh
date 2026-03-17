@@ -231,7 +231,7 @@ if [ "$MODE" = "install" ]; then
     echo ""
     echo -e "  ${GREEN}openclaw cron add \\\\${NC}"
     echo -e "  ${GREEN}  --name \"crowwire-news-monitor\" \\\\${NC}"
-    echo -e "  ${GREEN}  --cron \"*/30 * * * *\" \\\\${NC}"
+    echo -e "  ${GREEN}  --cron \"*/2 * * * *\" \\\\${NC}"
     echo -e "  ${GREEN}  --tz \"Asia/Shanghai\" \\\\${NC}"
     echo -e "  ${GREEN}  --session isolated \\\\${NC}"
     echo -e "  ${GREEN}  --sessionTarget \"session:crowwire-monitor\" \\\\${NC}"

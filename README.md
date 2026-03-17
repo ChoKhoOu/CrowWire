@@ -54,18 +54,24 @@ rm -f /opt/CrowWire/crowwire.lobster.bak
 
 #### 第 3 步：注册定时任务
 
+向用户询问：
+
+> 你希望每隔几分钟检查一次新闻？（建议 2 分钟，最大 15 分钟）
+
+拿到用户回答后，用对应的 cron 表达式注册（默认 2 分钟）：
+
 ```bash
 openclaw cron add \
   --name "crowwire-news-monitor" \
-  --cron "*/30 * * * *" \
+  --cron "*/2 * * * *" \
   --tz "Asia/Shanghai" \
   --session isolated \
   --sessionTarget "session:crowwire-monitor" \
   --message "Run the CrowWire pipeline: lobster run /opt/CrowWire/crowwire.lobster"
 ```
 
-根据用户偏好调整：
-- `--cron "*/15 * * * *"` 改为每 15 分钟
+注意：
+- 间隔不应超过 15 分钟（否则会错过紧急新闻）
 - `--tz` 改为用户所在时区
 
 #### 第 4 步：确认配置并重启（仅在此步骤重启）
@@ -256,7 +262,7 @@ CrowWire 通过 `openclaw.invoke --tool llm-task` 调用 LLM，模型和 API 由
 ```bash
 openclaw cron add \
   --name "crowwire-news-monitor" \
-  --cron "*/30 * * * *" \
+  --cron "*/2 * * * *" \
   --tz "Asia/Shanghai" \
   --session isolated \
   --sessionTarget "session:crowwire-monitor" \
