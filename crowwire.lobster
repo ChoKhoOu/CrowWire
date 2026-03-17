@@ -5,7 +5,9 @@ args:
   db:
     default: "/opt/crowwire/crowwire.db"
   channel:
-    default: "news"
+    default: "discord"
+  target:
+    default: "channel:YOUR_CHANNEL_ID"
 steps:
   - id: fetch
     command: crowwire-cli fetch --config ${config}
@@ -27,7 +29,7 @@ steps:
     stdin: $classify.stdout
 
   - id: send-urgent
-    command: crowwire-cli send --channel ${channel}
+    command: crowwire-cli send --channel ${channel} --target ${target}
     stdin: $deliver-urgent.stdout
 
   - id: deliver-digest
@@ -35,5 +37,5 @@ steps:
     stdin: $classify.stdout
 
   - id: send-digest
-    command: crowwire-cli send --channel ${channel}
+    command: crowwire-cli send --channel ${channel} --target ${target}
     stdin: $deliver-digest.stdout

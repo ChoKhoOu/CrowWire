@@ -169,7 +169,7 @@ lobster run $LOBSTER_FILE
 ## Run with custom args
 
 \`\`\`bash
-lobster run $LOBSTER_FILE --args-json '{"config":"$FEEDS_YAML","db":"$DB_PATH","channel":"news"}'
+lobster run $LOBSTER_FILE --args-json '{"config":"$FEEDS_YAML","db":"$DB_PATH","channel":"discord","target":"channel:YOUR_CHANNEL_ID"}'
 \`\`\`
 
 ## Pipeline stages
@@ -179,7 +179,7 @@ lobster run $LOBSTER_FILE --args-json '{"config":"$FEEDS_YAML","db":"$DB_PATH","
 3. **score** — LLM scores each item for urgency/relevance/novelty (0-100)
 4. **classify** — urgent (>= 75) sent immediately; others buffered for digest
 5. **format** — render as urgent alert or digest summary (Chinese output)
-6. **send** — deliver to configured channel
+6. **send** — deliver to configured channel (--channel provider --target destination)
 
 ## Manual CLI usage
 
@@ -227,7 +227,7 @@ fi
 if [ "$MODE" = "install" ]; then
     step "设置定时任务..."
     echo ""
-    echo "运行以下命令添加每 30 分钟的定时任务："
+    echo "运行以下命令添加每 2 分钟的定时任务："
     echo ""
     echo -e "  ${GREEN}openclaw cron add \\\\${NC}"
     echo -e "  ${GREEN}  --name \"crowwire-news-monitor\" \\\\${NC}"

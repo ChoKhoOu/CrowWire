@@ -92,10 +92,11 @@ program
 program
   .command('send')
   .description('Read formatted message from stdin, split into Discord-safe chunks, and send via OpenClaw')
-  .requiredOption('--channel <name>', 'Target channel name')
-  .action(async (opts: { channel: string }) => {
+  .requiredOption('--channel <provider>', 'Message provider (e.g. discord, slack, telegram)')
+  .requiredOption('--target <dest>', 'Destination (e.g. channel:1483118883861954641)')
+  .action(async (opts: { channel: string; target: string }) => {
     try {
-      await runSend(opts.channel);
+      await runSend(opts.channel, opts.target);
     } catch (err) {
       process.stderr.write(`[error] send: ${err instanceof Error ? err.message : err}\n`);
       process.exit(1);

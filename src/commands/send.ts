@@ -7,27 +7,26 @@ function detectSendMethod(): 'openclaw.invoke' | 'openclaw' {
     execSync('command -v openclaw.invoke', { stdio: 'pipe' });
     return 'openclaw.invoke';
   } catch {
-    // openclaw.invoke shim not available, fall back to openclaw CLI
     return 'openclaw';
   }
 }
 
-function sendMessage(method: 'openclaw.invoke' | 'openclaw', channel: string, text: string): void {
+function sendMessage(method: 'openclaw.invoke' | 'openclaw', channel: string, target: string, text: string): void {
   if (method === 'openclaw.invoke') {
-    const argsJson = JSON.stringify({ channel });
+    const argsJson = JSON.stringify({ channel, target });
     execSync(
       `openclaw.invoke --tool message --action send --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
       { input: text, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     );
   } else {
     execSync(
-      `openclaw message send --channel ${channel}`,
+      `openclaw message send --channel ${channel} --target ${target}`,
       { input: text, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     );
   }
 }
 
-export async function runSend(channel: string): Promise<void> {
+export async function runSend(channel: string, target: string): Promise<void> {
   const input = await readStdin();
   if (!input.trim()) return;
 
@@ -36,6 +35,6 @@ export async function runSend(channel: string): Promise<void> {
 
   for (const msg of messages) {
     if (!msg.trim()) continue;
-    sendMessage(method, channel, msg);
+    sendMessage(method, channel, target, msg);
   }
 }

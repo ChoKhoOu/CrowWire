@@ -38,19 +38,21 @@ cd CrowWire
 
 等待脚本执行完毕后再进行下一步。
 
-#### 第 2 步：配置 Discord 频道
+#### 第 2 步：配置消息投递目标
 
 向用户询问：
 
 > 你希望将新闻推送到哪个 Discord 频道？如果还没有，请先在 Discord 中创建一个文字频道，然后右键频道 → "复制频道 ID"（需要在 Discord 设置中开启开发者模式）发给我。
 
-拿到频道 ID 后，将 `crowwire.lobster` 中的 channel 默认值更新为用户提供的频道 ID：
+拿到频道 ID 后，更新 `crowwire.lobster` 中的 `target` 默认值（`channel` 保持 `discord` 不变）：
 
 ```bash
-# 将 channel 默认值替换为用户的频道 ID
-sed -i.bak 's/default: "news"/default: "<用户提供的频道ID>"/' /opt/CrowWire/crowwire.lobster
+# 将 target 默认值替换为用户的频道 ID
+sed -i.bak 's/default: "channel:YOUR_CHANNEL_ID"/default: "channel:<用户提供的频道ID>"/' /opt/CrowWire/crowwire.lobster
 rm -f /opt/CrowWire/crowwire.lobster.bak
 ```
+
+注意：`channel` 是消息平台（如 `discord`），`target` 是具体目标（如 `channel:1483118883861954641`）。
 
 #### 第 3 步：注册定时任务
 
@@ -129,7 +131,7 @@ git pull
 对比更新前后的 `feeds.yaml` 和 `crowwire.lobster`，确认：
 - 是否有新增的配置项需要用户确认
 - 工作流路径是否正确（install.sh 会自动同步）
-- 频道 ID 是否保留（install.sh 不会覆盖 channel 配置）
+- `target`（频道 ID）是否保留（install.sh 不会覆盖 channel/target 配置）
 
 #### 第 3 步：仅在必要时重启
 
@@ -294,7 +296,7 @@ lobster run ./crowwire.lobster
 | `crowwire-cli score` | LLM 评分（紧急度/相关度/新颖度 + 摘要） |
 | `crowwire-cli classify --db <path>` | 紧急分流 + 跨源聚合 |
 | `crowwire-cli format --type <urgent\|digest>` | 格式化为中文 Markdown |
-| `crowwire-cli send --channel <name>` | 分割长消息并逐条发送 |
+| `crowwire-cli send --channel <provider> --target <dest>` | 分割长消息并逐条发送 |
 
 ### classify 参数
 
@@ -331,6 +333,10 @@ docker compose logs rsshub
 
 # 更新
 git pull && ./install.sh
+
+# 避免 cron 执行时 exec approval 抖动，将 lobster 和 crowwire-cli 配为 safe bin
+# 在 openclaw.json 中添加：
+# { "tools": { "exec": { "safeBins": ["lobster", "crowwire-cli"] } } }
 ```
 
 ## 开发
