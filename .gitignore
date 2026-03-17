@@ -3,3 +3,5 @@ dist/
 .env
 config.yaml
 *.log
+*.db
+crowwire.local.json
