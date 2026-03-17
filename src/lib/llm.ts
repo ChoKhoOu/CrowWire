@@ -8,12 +8,14 @@ const TIMEOUT_MS = 60_000;
 
 const DEFAULT_SCORES = { urgency: 50, relevance: 50, novelty: 50 };
 
-const SCORING_PROMPT = `You are a news analyst. Score each news item for:
-- urgency (0-100): How time-sensitive? Breaking events score 90+.
-- relevance (0-100): How important to a tech/finance professional?
-- novelty (0-100): How surprising or new is this information?
+const SCORING_PROMPT = `You are a news analyst. For each news item:
+1. Score it:
+   - urgency (0-100): How time-sensitive? Breaking events score 90+.
+   - relevance (0-100): How important to a tech/finance professional?
+   - novelty (0-100): How surprising or new is this information?
+2. Write a "summary" (string): A Chinese summary in 30-150 characters. It MUST add context or details beyond the title — do NOT repeat or rephrase the title. Focus on the key facts, numbers, or implications. More important news (higher urgency/relevance) deserves a longer, more detailed summary.
 
-Return a JSON array with the same items, each having added "urgency", "relevance", and "novelty" integer fields.`;
+Return a JSON array with the same items, each having added "urgency", "relevance", "novelty" (integers) and "summary" (string) fields.`;
 
 export async function scoreBatch(items: FeedItem[]): Promise<ScoredItem[]> {
   if (items.length === 0) return [];
@@ -89,6 +91,7 @@ function mergeScores(originals: FeedItem[], scored: Array<Record<string, unknown
       urgency: safeInt(s?.urgency, DEFAULT_SCORES.urgency),
       relevance: safeInt(s?.relevance, DEFAULT_SCORES.relevance),
       novelty: safeInt(s?.novelty, DEFAULT_SCORES.novelty),
+      summary: typeof s?.summary === 'string' && s.summary.trim() ? s.summary.trim() : undefined,
     };
   });
 }

@@ -2,15 +2,161 @@
 
 基于 [OpenClaw](https://openclaw.ai/) Lobster 工作流的财经新闻监控管道。自动抓取 RSS 源、去重、LLM 评分、跨源事件聚合，并推送紧急快讯和定时摘要。
 
+## 安装 / 更新
+
+将下面这条消息发给你的 AI 助手（OpenClaw 会话）即可：
+
+```
+请阅读 https://raw.githubusercontent.com/ChoKhoOu/CrowWire/main/README.md 并按照「AI 安装指引」帮我安装 CrowWire
+```
+
+更新时同样发送：
+
+```
+请阅读 https://raw.githubusercontent.com/ChoKhoOu/CrowWire/main/README.md 并按照「AI 更新指引」帮我更新 CrowWire
+```
+
+---
+
+<details>
+<summary>🤖 AI 安装指引（LLM 专用 — 点击展开）</summary>
+
+### 首次安装流程
+
+**重要原则：在所有配置完成之前，不要重启 OpenClaw 网关。**
+
+#### 第 1 步：克隆并运行安装脚本
+
+```bash
+cd /opt  # 或用户指定的安装目录
+git clone https://github.com/ChoKhoOu/CrowWire.git
+cd CrowWire
+./install.sh
+```
+
+安装脚本会自动完成：Docker Compose 启动 RSSHub、构建 CLI、冒烟测试、注册 Skill、启用 Lobster 插件。
+
+等待脚本执行完毕后再进行下一步。
+
+#### 第 2 步：配置 Discord 频道
+
+向用户询问：
+
+> 你希望将新闻推送到哪个 Discord 频道？如果还没有，请先在 Discord 中创建一个文字频道，然后右键频道 → "复制频道 ID"（需要在 Discord 设置中开启开发者模式）发给我。
+
+拿到频道 ID 后，将 `crowwire.lobster` 中的 channel 默认值更新为用户提供的频道 ID：
+
+```bash
+# 将 channel 默认值替换为用户的频道 ID
+sed -i.bak 's/default: "news"/default: "<用户提供的频道ID>"/' /opt/CrowWire/crowwire.lobster
+rm -f /opt/CrowWire/crowwire.lobster.bak
+```
+
+#### 第 3 步：注册定时任务
+
+```bash
+openclaw cron add \
+  --name "crowwire-news-monitor" \
+  --cron "*/30 * * * *" \
+  --tz "Asia/Shanghai" \
+  --session isolated \
+  --sessionTarget "session:crowwire-monitor" \
+  --message "Run the CrowWire pipeline: lobster run /opt/CrowWire/crowwire.lobster"
+```
+
+根据用户偏好调整：
+- `--cron "*/15 * * * *"` 改为每 15 分钟
+- `--tz` 改为用户所在时区
+
+#### 第 4 步：确认配置并重启（仅在此步骤重启）
+
+确认用户对以下配置满意：
+- RSS 源列表（`feeds.yaml`）
+- 推送频道
+- 定时间隔
+- 紧急阈值（默认 75）
+
+全部确认后，如果修改了 `openclaw.json`（如添加了 lobster 到 alsoAllow），执行：
+
+```bash
+openclaw gateway restart
+```
+
+如果没有修改 `openclaw.json`，则无需重启。
+
+#### 第 5 步：验证
+
+```bash
+# 测试抓取
+crowwire-cli fetch --config /opt/CrowWire/feeds.yaml | head -c 300
+
+# 测试完整 pipeline
+lobster run /opt/CrowWire/crowwire.lobster
+
+# 确认 cron 已注册
+openclaw cron list
+```
+
+向用户确认 Discord 频道是否收到了消息。
+
+</details>
+
+<details>
+<summary>🤖 AI 更新指引（LLM 专用 — 点击展开）</summary>
+
+### 更新流程
+
+**重要原则：在所有步骤完成之前，不要重启 OpenClaw 网关。**
+
+#### 第 1 步：拉取并重新安装
+
+```bash
+cd /opt/CrowWire  # 或实际安装目录
+git pull
+./install.sh
+```
+
+安装脚本自动检测为升级模式，会保留现有配置。
+
+#### 第 2 步：检查配置变更
+
+对比更新前后的 `feeds.yaml` 和 `crowwire.lobster`，确认：
+- 是否有新增的配置项需要用户确认
+- 工作流路径是否正确（install.sh 会自动同步）
+- 频道 ID 是否保留（install.sh 不会覆盖 channel 配置）
+
+#### 第 3 步：仅在必要时重启
+
+只有当 `openclaw.json` 发生变更时（如新增插件），才需要重启：
+
+```bash
+openclaw gateway restart
+```
+
+普通代码更新无需重启，下次 cron 触发时会自动使用新版本。
+
+#### 第 4 步：验证
+
+```bash
+lobster run /opt/CrowWire/crowwire.lobster
+openclaw cron list
+```
+
+向用户确认更新后的 pipeline 正常运行。
+
+</details>
+
+---
+
 ## 架构
 
 ```
 fetch → dedup → score → classify → format → send
   │        │       │        │          │       │
-  │        │       │        │          │       └─ openclaw.invoke 推送消息
+  │        │       │        │          │       └─ 逐条发送（自动分割长消息）
   │        │       │        │          └─ 中文 Markdown（紧急快讯 / 定时摘要）
   │        │       │        └─ 紧急分流 + 缓冲 + 跨源事件聚合
-  │        │       └─ openclaw.invoke llm-task（紧急度/相关度/新颖度）
+  │        │       └─ openclaw.invoke llm-task（紧急度/相关度/新颖度 + 摘要）
   │        └─ SQLite 哈希去重（identity + content）
   └─ RSSHub RSS/Atom 解析
 ```
@@ -19,31 +165,14 @@ fetch → dedup → score → classify → format → send
 - **跨源事件聚合** — 不同 RSS 源报道同一事件的新闻合并为一条，LLM 生成综合摘要
 - **紧急去重** — 已发送的紧急事件，后续其他源的报道静默丢弃
 - **保守合并策略** — 完全连接聚类（complete-linkage），宁可漏合不可误合
-- **中文优先输出** — 摘要按高/低相关度分层展示
+- **LLM 内容摘要** — 每条新闻生成独立摘要，不重复标题
+- **Discord 友好** — 自动分割长消息，URL 抑制预览卡片
 
 ## 前置要求
 
 - Node.js >= 22
 - Docker（用于 RSSHub）
 - [OpenClaw](https://github.com/openclaw/openclaw)（`npm i -g openclaw@latest && openclaw onboard --install-daemon`）
-
-## 快速开始
-
-```bash
-git clone https://github.com/ChoKhoOu/CrowWire.git
-cd CrowWire
-./install.sh
-```
-
-安装脚本自动完成：
-1. 通过 Docker Compose 启动 RSSHub
-2. 构建 CLI（`crowwire-cli`）
-3. 冒烟测试
-4. 注册 OpenClaw Skill
-5. 启用 Lobster 插件
-6. 输出定时任务配置命令
-
-`git pull` 后重新运行 `./install.sh` 自动识别为升级模式。
 
 ## 配置
 
@@ -60,7 +189,7 @@ feeds:
   # 更多源参考 https://docs.rsshub.app
 
 settings:
-  urgent_threshold: 85          # 紧急度 >= 此值触发即时推送
+  urgent_threshold: 75          # 紧急度 >= 此值触发即时推送
   digest_interval_minutes: 15   # 摘要缓冲刷新间隔（分钟）
   dedup_ttl_hours: 72           # 去重记录保留时长（小时）
   content_max_chars: 500        # 每条新闻最大内容长度
@@ -69,18 +198,27 @@ settings:
   sent_event_ttl_hours: 24      # 已发送紧急事件记录保留时长（小时）
 ```
 
-## 定时任务
+## 输出格式
 
-在 OpenClaw 中注册 cron：
+**紧急快讯**（urgency ≥ 75 时立即推送）：
+```
+🚨 紧急快讯 🟠 高
 
-```bash
-openclaw cron add \
-  --name "crowwire-news-monitor" \
-  --cron "*/30 * * * *" \
-  --tz "Asia/Shanghai" \
-  --session isolated \
-  --sessionTarget "session:crowwire-monitor" \
-  --message "Run the CrowWire pipeline: lobster run /path/to/crowwire.lobster"
+- 美联储宣布降息25个基点，鲍威尔称通胀压力已明显缓解，市场预期6月首次降息概率升至78% _(Bloomberg)_ <https://...>
+```
+
+**定时摘要**（每 15 分钟）：
+```
+📰 新闻摘要 — 2026-03-17 14:00 | 共 11 条
+
+🔥 重点关注
+- 中国2月CPI同比上涨0.7%，低于市场预期的0.9%，核心CPI连续三个月回落 _(jin10-important)_ <https://...>
+
+📋 其他资讯（8条）
+- 台交所加权股价指数收高1.5% _(cls-telegraph)_ <https://...>
+- 蚂蚁集团向母校上海交大捐赠1.3亿 _(cls-hot)_ <https://...>
+
+CrowWire · 2026-03-17 14:00
 ```
 
 ## LLM 模型配置
@@ -110,6 +248,20 @@ CrowWire 通过 `openclaw.invoke --tool llm-task` 调用 LLM，模型和 API 由
 
 支持的 provider：Anthropic、OpenAI、OpenRouter、Ollama（本地）、Google Gemini 等。
 
+## 定时任务
+
+在 OpenClaw 中注册 cron：
+
+```bash
+openclaw cron add \
+  --name "crowwire-news-monitor" \
+  --cron "*/30 * * * *" \
+  --tz "Asia/Shanghai" \
+  --session isolated \
+  --sessionTarget "session:crowwire-monitor" \
+  --message "Run the CrowWire pipeline: lobster run /path/to/crowwire.lobster"
+```
+
 ## 手动测试
 
 ```bash
@@ -132,15 +284,16 @@ lobster run ./crowwire.lobster
 |------|------|
 | `crowwire-cli fetch --config <path>` | 抓取 RSS 源，输出 JSON |
 | `crowwire-cli dedup --db <path>` | SQLite 哈希去重 |
-| `crowwire-cli score` | LLM 评分（紧急度/相关度/新颖度） |
+| `crowwire-cli score` | LLM 评分（紧急度/相关度/新颖度 + 摘要） |
 | `crowwire-cli classify --db <path>` | 紧急分流 + 跨源聚合 |
 | `crowwire-cli format --type <urgent\|digest>` | 格式化为中文 Markdown |
+| `crowwire-cli send --channel <name>` | 分割长消息并逐条发送 |
 
 ### classify 参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--threshold <n>` | 85 | 紧急推送阈值 |
+| `--threshold <n>` | 75 | 紧急推送阈值 |
 | `--digest-interval <min>` | 15 | 摘要刷新间隔（分钟） |
 | `--similarity-threshold <n>` | 0.55 | 跨源聚合相似度阈值 |
 | `--sent-event-ttl <hours>` | 24 | 已发送紧急事件 TTL（小时） |
@@ -178,7 +331,7 @@ git pull && ./install.sh
 ```bash
 npm install
 npm run build        # TypeScript 编译
-npm test             # 运行全部 68 个测试
+npm test             # 运行全部 75 个测试
 npm run test:watch   # 监听模式
 ```
 

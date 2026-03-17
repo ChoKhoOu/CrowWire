@@ -5,6 +5,7 @@ import { runDedup } from './commands/dedup.js';
 import { runScore } from './commands/score.js';
 import { runClassify } from './commands/classify.js';
 import { runFormat } from './commands/format.js';
+import { runSend } from './commands/send.js';
 
 const program = new Command();
 
@@ -57,7 +58,7 @@ program
   .command('classify')
   .description('Read scored items from stdin, classify urgent/normal, manage buffer')
   .requiredOption('--db <path>', 'Path to SQLite database file')
-  .option('--threshold <n>', 'Urgency threshold for breaking news', parseInt, 85)
+  .option('--threshold <n>', 'Urgency threshold for breaking news', parseInt, 75)
   .option('--digest-interval <min>', 'Digest flush interval in minutes', parseInt, 15)
   .option('--similarity-threshold <n>', 'Similarity threshold for cross-source aggregation', parseFloat, 0.55)
   .option('--sent-event-ttl <hours>', 'TTL in hours for sent urgent event records', parseInt, 24)
@@ -84,6 +85,19 @@ program
       await runFormat(type);
     } catch (err) {
       process.stderr.write(`[error] format: ${err instanceof Error ? err.message : err}\n`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('send')
+  .description('Read formatted message from stdin, split into Discord-safe chunks, and send via OpenClaw')
+  .requiredOption('--channel <name>', 'Target channel name')
+  .action(async (opts: { channel: string }) => {
+    try {
+      await runSend(opts.channel);
+    } catch (err) {
+      process.stderr.write(`[error] send: ${err instanceof Error ? err.message : err}\n`);
       process.exit(1);
     }
   });

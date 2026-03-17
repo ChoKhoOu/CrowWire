@@ -3,7 +3,7 @@ import { parse } from 'yaml';
 import type { FeedsConfig } from '../types.js';
 
 const DEFAULTS = {
-  urgent_threshold: 85,
+  urgent_threshold: 75,
   digest_interval_minutes: 15,
   dedup_ttl_hours: 72,
   content_max_chars: 500,

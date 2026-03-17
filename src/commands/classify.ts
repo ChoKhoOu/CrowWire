@@ -13,7 +13,7 @@ const MERGE_SUMMARY_TIMEOUT_MS = 30_000;
 
 export async function runClassify(
   dbPath: string,
-  threshold: number = 85,
+  threshold: number = 75,
   digestIntervalMinutes: number = 15,
   similarityThreshold: number = 0.55,
   sentEventTtlHours: number = 24,

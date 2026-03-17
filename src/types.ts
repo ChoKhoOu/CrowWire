@@ -31,6 +31,7 @@ export interface ScoredItem extends FeedItem {
   urgency: number;
   relevance: number;
   novelty: number;
+  summary?: string;
 }
 
 export interface EventGroup {

@@ -29,7 +29,7 @@ feeds:
     expect(config.feeds[0].name).toBe('test-feed');
     expect(config.feeds[0].url).toBe('https://example.com/rss');
     expect(config.feeds[0].enabled).toBe(true);
-    expect(config.settings.urgent_threshold).toBe(85);
+    expect(config.settings.urgent_threshold).toBe(75);
     expect(config.settings.digest_interval_minutes).toBe(15);
     expect(config.settings.dedup_ttl_hours).toBe(72);
     expect(config.settings.content_max_chars).toBe(500);

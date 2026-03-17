@@ -28,7 +28,7 @@ steps:
     condition: $classify.json.has_urgent
 
   - id: send-urgent
-    command: openclaw.invoke --tool message --action send --args-json '{"channel": "$args.channel"}'
+    command: crowwire-cli send --channel $args.channel
     stdin: $deliver-urgent.stdout
     condition: $classify.json.has_urgent
 
@@ -38,6 +38,6 @@ steps:
     condition: $classify.json.has_digest
 
   - id: send-digest
-    command: openclaw.invoke --tool message --action send --args-json '{"channel": "$args.channel"}'
+    command: crowwire-cli send --channel $args.channel
     stdin: $deliver-digest.stdout
     condition: $classify.json.has_digest
