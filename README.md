@@ -65,7 +65,42 @@ rm -f "$INSTALL_DIR/crowwire.lobster.bak"
 
 注意：`channel` 是消息平台，`target` 是该平台上的具体投递目标。
 
-#### 第 3 步：注册定时任务
+#### 第 3 步：配置 exec safe-bin 白名单
+
+为避免 cron 执行时频繁触发 exec 审批，需将 `lobster` 配置为 OpenClaw 的受限安全二进制。
+
+先获取 `lobster` 所在目录：
+
+```bash
+LOBSTER_BIN_DIR=$(dirname "$(which lobster)")
+echo "$LOBSTER_BIN_DIR"
+```
+
+然后在 `~/.openclaw/openclaw.json` 的 `tools.exec` 下添加以下配置（与已有字段合并，不要覆盖其他配置）：
+
+```json5
+{
+  "tools": {
+    "exec": {
+      "safeBins": ["lobster"],
+      "safeBinTrustedDirs": ["<替换为上面输出的 LOBSTER_BIN_DIR>"],
+      "safeBinProfiles": {
+        "lobster": {
+          "minPositional": 2,
+          "maxPositional": 2
+        }
+      }
+    }
+  }
+}
+```
+
+字段说明：
+- `safeBins` — 仅允许 `lobster`，**不要**添加 `crowwire-cli`、`bash` 等其他二进制
+- `safeBinTrustedDirs` — 限制只信任 `lobster` 实际安装路径
+- `safeBinProfiles` — 约束 `lobster` 只能以 `lobster run <path>` 形式执行（恰好 2 个 positional 参数）
+
+#### 第 4 步：注册定时任务
 
 向用户询问：
 
@@ -87,7 +122,7 @@ openclaw cron add \
 - 间隔不应超过 15 分钟（否则会错过紧急新闻）
 - `--tz` 改为用户所在时区
 
-#### 第 4 步：确认配置并重启（仅在此步骤重启）
+#### 第 5 步：确认配置并重启（仅在此步骤重启）
 
 确认用户对以下配置满意：
 - RSS 源列表（`feeds.yaml`）
@@ -95,15 +130,15 @@ openclaw cron add \
 - 定时间隔
 - 紧急阈值（默认 75）
 
-全部确认后，如果修改了 `openclaw.json`（如添加了 lobster 到 alsoAllow），执行：
+全部确认后，由于第 3 步修改了 `openclaw.json`（safe-bin 白名单），执行：
 
 ```bash
 openclaw gateway restart
 ```
 
-如果没有修改 `openclaw.json`，则无需重启。
+如果跳过了第 3 步（未修改 `openclaw.json`），则无需重启。
 
-#### 第 5 步：验证
+#### 第 6 步：验证
 
 ```bash
 # 测试抓取
@@ -345,9 +380,16 @@ docker compose logs rsshub
 # 更新
 git pull && ./install.sh
 
-# 避免 cron 执行时 exec approval 抖动，将 lobster 和 crowwire-cli 配为 safe bin
-# 在 openclaw.json 中添加：
-# { "tools": { "exec": { "safeBins": ["lobster", "crowwire-cli"] } } }
+# 避免 cron 执行时 exec approval 抖动，将 lobster 配为 safe bin
+# 在 ~/.openclaw/openclaw.json 的 tools.exec 下添加：
+# {
+#   "safeBins": ["lobster"],
+#   "safeBinTrustedDirs": ["<lobster 所在目录>"],
+#   "safeBinProfiles": {
+#     "lobster": { "minPositional": 2, "maxPositional": 2 }
+#   }
+# }
+# 注意：仅允许 lobster，不要添加 crowwire-cli、bash 等其他二进制
 ```
 
 ## 开发
