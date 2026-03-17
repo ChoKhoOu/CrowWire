@@ -19,14 +19,19 @@ function sendMessage(method: 'openclaw.invoke' | 'openclaw', channel: string, ta
       { input: text, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     );
   } else {
+    const escaped = text.replace(/'/g, "'\\''");
     execSync(
-      `openclaw message send --channel ${channel} --target ${target}`,
-      { input: text, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+      `openclaw message send --channel ${channel} --target ${target} --message '${escaped}'`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     );
   }
 }
 
 export async function runSend(channel: string, target: string): Promise<void> {
+  if (!target) {
+    throw new Error('--target is required (e.g. --target channel:123456)');
+  }
+
   const input = await readStdin();
   if (!input.trim()) return;
 

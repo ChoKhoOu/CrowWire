@@ -91,4 +91,61 @@ describe('send command', () => {
     );
     expect(sendCalls).toHaveLength(0);
   });
+
+  it('invoke path passes message via stdin', async () => {
+    mockedExecSync.mockImplementation((cmd: string) => {
+      if (typeof cmd === 'string' && cmd.includes('command -v')) return Buffer.from('/usr/bin/openclaw.invoke');
+      return Buffer.from('');
+    });
+
+    mockStdin('Hello world');
+    await runSend('telegram', 'chat:789');
+
+    const sendCall = mockedExecSync.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('openclaw.invoke --tool message'),
+    );
+    expect(sendCall).toBeDefined();
+    // invoke path uses stdin for message body
+    const opts = sendCall![1] as { input?: string };
+    expect(opts.input).toBe('Hello world');
+  });
+
+  it('fallback path passes message via --message flag, not stdin', async () => {
+    mockedExecSync.mockImplementation((cmd: string) => {
+      if (typeof cmd === 'string' && cmd.includes('command -v')) throw new Error('not found');
+      return Buffer.from('');
+    });
+
+    mockStdin('Hello world');
+    await runSend('slack', 'channel:abc');
+
+    const sendCall = mockedExecSync.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('openclaw message send'),
+    );
+    expect(sendCall).toBeDefined();
+    const cmdStr = sendCall![0] as string;
+    expect(cmdStr).toContain("--message 'Hello world'");
+    // fallback path must NOT use stdin
+    const opts = sendCall![1] as { input?: string };
+    expect(opts.input).toBeUndefined();
+  });
+
+  it('throws when target is missing', async () => {
+    await expect(runSend('discord', '')).rejects.toThrow('--target is required');
+  });
+
+  it('does not send empty string messages after split', async () => {
+    mockedExecSync.mockImplementation((cmd: string) => {
+      if (typeof cmd === 'string' && cmd.includes('command -v')) throw new Error('not found');
+      return Buffer.from('');
+    });
+
+    mockStdin('');
+    await runSend('discord', 'channel:123456');
+
+    const sendCalls = mockedExecSync.mock.calls.filter(
+      c => typeof c[0] === 'string' && c[0].includes('openclaw message send'),
+    );
+    expect(sendCalls).toHaveLength(0);
+  });
 });
