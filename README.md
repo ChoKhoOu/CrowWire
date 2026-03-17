@@ -52,18 +52,21 @@ cd CrowWire
 | Slack | `slack` | `channel:<频道ID>` | 频道详情 → 复制频道 ID |
 | Telegram | `telegram` | `chat:<chat_id>` | 通过 Bot API 获取 chat ID |
 
-拿到信息后，更新 `crowwire.lobster` 中的默认值：
+拿到信息后，编辑安装目录下的 `crowwire.local.json`（install.sh 已自动创建）：
 
 ```bash
 INSTALL_DIR="/opt/CrowWire"  # 或实际安装目录
-# 替换 channel（平台）
-sed -i.bak 's/default: "discord"/default: "<用户选择的平台>"/' "$INSTALL_DIR/crowwire.lobster"
-# 替换 target（目标）
-sed -i.bak 's/default: "channel:YOUR_CHANNEL_ID"/default: "<用户提供的目标>"/' "$INSTALL_DIR/crowwire.lobster"
-rm -f "$INSTALL_DIR/crowwire.lobster.bak"
+node -e "
+  const fs = require('fs');
+  const p = '$INSTALL_DIR/crowwire.local.json';
+  const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+  cfg.channel = '<用户选择的平台>';
+  cfg.target = '<用户提供的目标>';
+  fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+"
 ```
 
-注意：`channel` 是消息平台，`target` 是该平台上的具体投递目标。
+注意：`channel` 是消息平台，`target` 是该平台上的具体投递目标。不要修改 `crowwire.lobster`——它是 Git 跟踪的工作流模板，更新时会被覆盖。
 
 #### 第 3 步：配置 exec safe-bin 白名单
 
@@ -106,21 +109,43 @@ echo "$LOBSTER_BIN_DIR"
 
 > 你希望每隔几分钟检查一次新闻？（建议 2 分钟，最大 15 分钟）
 
-拿到用户回答后，用对应的 cron 表达式注册（默认 2 分钟）：
+先将用户选择的间隔和时区写入 `crowwire.local.json`：
 
 ```bash
+INSTALL_DIR="/opt/CrowWire"  # 或实际安装目录
+node -e "
+  const fs = require('fs');
+  const p = '$INSTALL_DIR/crowwire.local.json';
+  const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+  cfg.cron = '*/<用户选择的分钟数> * * * *';
+  cfg.tz = '<用户时区>';
+  fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+"
+```
+
+然后从 deploy config 构建 `--args-json` 并注册 cron：
+
+```bash
+INSTALL_DIR="/opt/CrowWire"  # 或实际安装目录
+ARGS_JSON=$(node -e "
+  const cfg = JSON.parse(require('fs').readFileSync('$INSTALL_DIR/crowwire.local.json', 'utf8'));
+  console.log(JSON.stringify({ channel: cfg.channel, target: cfg.target, config: cfg.config, db: cfg.db }));
+")
+CRON_EXPR=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$INSTALL_DIR/crowwire.local.json','utf8')).cron)")
+CRON_TZ=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$INSTALL_DIR/crowwire.local.json','utf8')).tz)")
+
 openclaw cron add \
   --name "crowwire-news-monitor" \
-  --cron "*/2 * * * *" \
-  --tz "Asia/Shanghai" \
+  --cron "$CRON_EXPR" \
+  --tz "$CRON_TZ" \
   --session isolated \
   --sessionTarget "session:crowwire-monitor" \
-  --message "Run the CrowWire pipeline: lobster run /opt/CrowWire/crowwire.lobster"
+  --message "Run the CrowWire pipeline: lobster run $INSTALL_DIR/crowwire.lobster --args-json '$ARGS_JSON'"
 ```
 
 注意：
 - 间隔不应超过 15 分钟（否则会错过紧急新闻）
-- `--tz` 改为用户所在时区
+- `--args-json` 覆盖工作流模板中的占位符，确保使用本地配置的 channel/target
 
 #### 第 5 步：确认配置并重启（仅在此步骤重启）
 
@@ -141,17 +166,23 @@ openclaw gateway restart
 #### 第 6 步：验证
 
 ```bash
-# 测试抓取
-crowwire-cli fetch --config /opt/CrowWire/feeds.yaml | head -c 300
+INSTALL_DIR="/opt/CrowWire"  # 或实际安装目录
 
-# 测试完整 pipeline
-lobster run /opt/CrowWire/crowwire.lobster
+# 测试抓取
+crowwire-cli fetch --config $INSTALL_DIR/feeds.yaml | head -c 300
+
+# 构建 args-json 并测试完整 pipeline
+ARGS_JSON=$(node -e "
+  const cfg = JSON.parse(require('fs').readFileSync('$INSTALL_DIR/crowwire.local.json', 'utf8'));
+  console.log(JSON.stringify({ channel: cfg.channel, target: cfg.target, config: cfg.config, db: cfg.db }));
+")
+lobster run $INSTALL_DIR/crowwire.lobster --args-json "$ARGS_JSON"
 
 # 确认 cron 已注册
 openclaw cron list
 ```
 
-向用户确认 Discord 频道是否收到了消息。
+向用户确认消息投递目标是否收到了消息。
 
 </details>
 
@@ -170,14 +201,19 @@ git pull
 ./install.sh
 ```
 
-安装脚本自动检测为升级模式，会保留现有配置。
+安装脚本自动检测为升级模式：
+- `crowwire.local.json` 中的 `channel`/`target` 会被保留，仅同步 `config`/`db` 路径
+- `crowwire.lobster` 模板会被 git pull 覆盖，这是预期行为（运行时参数来自 local config）
 
 #### 第 2 步：检查配置变更
 
-对比更新前后的 `feeds.yaml` 和 `crowwire.lobster`，确认：
-- 是否有新增的配置项需要用户确认
-- 工作流路径是否正确（install.sh 会自动同步）
-- `target`（频道 ID）是否保留（install.sh 不会覆盖 channel/target 配置）
+确认 `crowwire.local.json` 中的 channel/target 仍正确：
+
+```bash
+cat /opt/CrowWire/crowwire.local.json
+```
+
+如果 `feeds.yaml` 有新增配置项，确认用户是否需要调整。
 
 #### 第 3 步：仅在必要时重启
 
@@ -192,7 +228,12 @@ openclaw gateway restart
 #### 第 4 步：验证
 
 ```bash
-lobster run /opt/CrowWire/crowwire.lobster
+INSTALL_DIR="/opt/CrowWire"  # 或实际安装目录
+ARGS_JSON=$(node -e "
+  const cfg = JSON.parse(require('fs').readFileSync('$INSTALL_DIR/crowwire.local.json', 'utf8'));
+  console.log(JSON.stringify({ channel: cfg.channel, target: cfg.target, config: cfg.config, db: cfg.db }));
+")
+lobster run $INSTALL_DIR/crowwire.lobster --args-json "$ARGS_JSON"
 openclaw cron list
 ```
 
@@ -305,16 +346,22 @@ CrowWire 通过 `openclaw.invoke --tool llm-task` 调用 LLM，模型和 API 由
 
 ## 定时任务
 
-在 OpenClaw 中注册 cron：
+运行时参数从 `crowwire.local.json` 读取，通过 `--args-json` 注入：
 
 ```bash
+INSTALL_DIR="/path/to/CrowWire"
+ARGS_JSON=$(node -e "
+  const cfg = JSON.parse(require('fs').readFileSync('$INSTALL_DIR/crowwire.local.json', 'utf8'));
+  console.log(JSON.stringify({ channel: cfg.channel, target: cfg.target, config: cfg.config, db: cfg.db }));
+")
+
 openclaw cron add \
   --name "crowwire-news-monitor" \
   --cron "*/2 * * * *" \
   --tz "Asia/Shanghai" \
   --session isolated \
   --sessionTarget "session:crowwire-monitor" \
-  --message "Run the CrowWire pipeline: lobster run /path/to/crowwire.lobster"
+  --message "Run the CrowWire pipeline: lobster run $INSTALL_DIR/crowwire.lobster --args-json '$ARGS_JSON'"
 ```
 
 ## 手动测试
@@ -329,8 +376,11 @@ crowwire-cli fetch --config ./feeds.yaml \
   | crowwire-cli classify --db ./crowwire.db \
   | crowwire-cli format --type digest
 
-# 通过 Lobster 运行
-lobster run ./crowwire.lobster
+# 通过 Lobster 运行（从 deploy config 注入参数）
+lobster run ./crowwire.lobster --args-json "$(node -e "
+  const cfg = JSON.parse(require('fs').readFileSync('./crowwire.local.json', 'utf8'));
+  console.log(JSON.stringify({ channel: cfg.channel, target: cfg.target, config: cfg.config, db: cfg.db }));
+")"
 ```
 
 ## CLI 命令
