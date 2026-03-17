@@ -40,19 +40,30 @@ cd CrowWire
 
 #### 第 2 步：配置消息投递目标
 
-向用户询问：
+先向用户询问平台：
 
-> 你希望将新闻推送到哪个 Discord 频道？如果还没有，请先在 Discord 中创建一个文字频道，然后右键频道 → "复制频道 ID"（需要在 Discord 设置中开启开发者模式）发给我。
+> 你希望将新闻推送到哪个平台？（Discord / Slack / Telegram / 其他 OpenClaw 支持的 channel）
 
-拿到频道 ID 后，更新 `crowwire.lobster` 中的 `target` 默认值（`channel` 保持 `discord` 不变）：
+再根据平台获取目标信息：
+
+| 平台 | `channel` 值 | `target` 格式 | 获取方式 |
+|------|-------------|--------------|---------|
+| Discord | `discord` | `channel:<频道ID>` | 右键频道 → 复制频道 ID（需开启开发者模式） |
+| Slack | `slack` | `channel:<频道ID>` | 频道详情 → 复制频道 ID |
+| Telegram | `telegram` | `chat:<chat_id>` | 通过 Bot API 获取 chat ID |
+
+拿到信息后，更新 `crowwire.lobster` 中的默认值：
 
 ```bash
-# 将 target 默认值替换为用户的频道 ID
-sed -i.bak 's/default: "channel:YOUR_CHANNEL_ID"/default: "channel:<用户提供的频道ID>"/' /opt/CrowWire/crowwire.lobster
-rm -f /opt/CrowWire/crowwire.lobster.bak
+INSTALL_DIR="/opt/CrowWire"  # 或实际安装目录
+# 替换 channel（平台）
+sed -i.bak 's/default: "discord"/default: "<用户选择的平台>"/' "$INSTALL_DIR/crowwire.lobster"
+# 替换 target（目标）
+sed -i.bak 's/default: "channel:YOUR_CHANNEL_ID"/default: "<用户提供的目标>"/' "$INSTALL_DIR/crowwire.lobster"
+rm -f "$INSTALL_DIR/crowwire.lobster.bak"
 ```
 
-注意：`channel` 是消息平台（如 `discord`），`target` 是具体目标（如 `channel:1483118883861954641`）。
+注意：`channel` 是消息平台，`target` 是该平台上的具体投递目标。
 
 #### 第 3 步：注册定时任务
 
@@ -80,7 +91,7 @@ openclaw cron add \
 
 确认用户对以下配置满意：
 - RSS 源列表（`feeds.yaml`）
-- 推送频道
+- 消息平台和目标（`channel` + `target`）
 - 定时间隔
 - 紧急阈值（默认 75）
 
