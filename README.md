@@ -269,6 +269,7 @@ fetch → dedup → score → classify → format → send
 - Docker（用于 RSSHub）
 - [OpenClaw](https://github.com/openclaw/openclaw)（`npm i -g openclaw@latest && openclaw onboard --install-daemon`）
 - [Lobster](https://github.com/openclaw/lobster)（安装脚本会自动安装，也可手动：`npm i -g @clawdbot/lobster@latest`）
+- OpenClaw **llm-task 插件**（安装脚本会自动启用；LLM 评分和摘要依赖此插件提供的 `openclaw.invoke` shim）
 
 ## 配置
 
@@ -320,8 +321,14 @@ CrowWire · 2026-03-17 14:00
 ## LLM 模型配置
 
 CrowWire 通过 `openclaw.invoke --tool llm-task` 调用 LLM，模型和 API 由 OpenClaw 配置决定。
+`install.sh` 会自动启用 llm-task 插件并添加到 agent allowlist。如需手动确认：
 
-在 `~/.openclaw/openclaw.json` 中设置：
+```bash
+openclaw plugins info llm-task   # 应显示 Status: enabled
+command -v openclaw.invoke       # 应返回路径
+```
+
+在 `~/.openclaw/openclaw.json` 中设置模型和 API Key：
 
 ```json5
 {

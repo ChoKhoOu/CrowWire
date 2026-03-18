@@ -222,28 +222,62 @@ else
 fi
 
 # ------------------------------------------------------------------
-# Step 6: Enable Lobster plugin (idempotent)
+# Step 6: Enable plugins & tool allowlist (idempotent)
 # ------------------------------------------------------------------
-step "检查 Lobster 插件..."
+step "检查插件配置..."
 
 if [ -f "$OPENCLAW_CONFIG" ]; then
-    if grep -q '"lobster"' "$OPENCLAW_CONFIG" 2>/dev/null; then
-        info "Lobster 已启用"
-    else
-        # Try to inject alsoAllow via node
-        node -e "
+    node -e "
+      const fs = require('fs');
+      const cfg = JSON.parse(fs.readFileSync('$OPENCLAW_CONFIG', 'utf8'));
+      let changed = false;
+
+      // 1. tools.alsoAllow: lobster + llm-task
+      cfg.tools = cfg.tools || {};
+      const allow = cfg.tools.alsoAllow || [];
+      for (const t of ['lobster', 'llm-task']) {
+        if (!allow.includes(t)) { allow.push(t); changed = true; }
+      }
+      cfg.tools.alsoAllow = allow;
+
+      // 2. plugins.entries.llm-task.enabled = true
+      cfg.plugins = cfg.plugins || {};
+      cfg.plugins.entries = cfg.plugins.entries || {};
+      if (!cfg.plugins.entries['llm-task'] || !cfg.plugins.entries['llm-task'].enabled) {
+        cfg.plugins.entries['llm-task'] = { enabled: true };
+        changed = true;
+      }
+
+      // 3. agents: ensure main agent allows llm-task
+      cfg.agents = cfg.agents || {};
+      cfg.agents.list = cfg.agents.list || [{ id: 'main' }];
+      const main = cfg.agents.list.find(a => a.id === 'main') || cfg.agents.list[0];
+      main.tools = main.tools || {};
+      const agentAllow = main.tools.alsoAllow || [];
+      if (!agentAllow.includes('llm-task')) { agentAllow.push('llm-task'); changed = true; }
+      main.tools.alsoAllow = agentAllow;
+
+      if (changed) {
+        fs.writeFileSync('$OPENCLAW_CONFIG', JSON.stringify(cfg, null, 2) + '\n');
+        console.log('UPDATED');
+      } else {
+        console.log('OK');
+      }
+    " 2>/dev/null && {
+        PLUGIN_RESULT=$(node -e "
           const fs = require('fs');
           const cfg = JSON.parse(fs.readFileSync('$OPENCLAW_CONFIG', 'utf8'));
-          cfg.tools = cfg.tools || {};
-          const allow = cfg.tools.alsoAllow || [];
-          if (!allow.includes('lobster')) allow.push('lobster');
-          cfg.tools.alsoAllow = allow;
-          fs.writeFileSync('$OPENCLAW_CONFIG', JSON.stringify(cfg, null, 2) + '\n');
-        " 2>/dev/null && info "已自动启用 Lobster 插件" || {
-            warn "请手动在 $OPENCLAW_CONFIG 中添加:"
-            echo '  { "tools": { "alsoAllow": ["lobster"] } }'
-        }
-    fi
+          const llm = cfg.plugins?.entries?.['llm-task']?.enabled ? 'yes' : 'no';
+          const lobster = (cfg.tools?.alsoAllow || []).includes('lobster') ? 'yes' : 'no';
+          console.log(llm + ':' + lobster);
+        " 2>/dev/null)
+        info "llm-task 插件: 已启用 | Lobster: 已允许"
+    } || {
+        warn "自动配置失败，请手动在 $OPENCLAW_CONFIG 中添加:"
+        echo '  plugins.entries."llm-task".enabled = true'
+        echo '  tools.alsoAllow: ["lobster", "llm-task"]'
+        echo '  agents.list[main].tools.alsoAllow: ["llm-task"]'
+    }
 else
     warn "$OPENCLAW_CONFIG 不存在，请先运行 'openclaw onboard'，然后重新执行本脚本"
 fi
