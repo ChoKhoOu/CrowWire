@@ -8,29 +8,6 @@ const TIMEOUT_MS = 60_000;
 
 const DEFAULT_SCORES = { urgency: 50, relevance: 50, novelty: 50 };
 
-type InvokeMethod = 'openclaw.invoke' | 'openclaw';
-
-let _cachedMethod: InvokeMethod | undefined;
-
-function detectInvokeMethod(): InvokeMethod {
-  if (_cachedMethod) return _cachedMethod;
-  try {
-    execSync('command -v openclaw.invoke', { stdio: 'pipe' });
-    _cachedMethod = 'openclaw.invoke';
-  } catch {
-    _cachedMethod = 'openclaw';
-  }
-  return _cachedMethod;
-}
-
-function buildLlmCommand(argsJson: string): string {
-  const escaped = argsJson.replace(/'/g, "'\\''");
-  if (detectInvokeMethod() === 'openclaw.invoke') {
-    return `openclaw.invoke --tool llm-task --action json --args-json '${escaped}'`;
-  }
-  return `openclaw invoke --tool llm-task --action json --args-json '${escaped}'`;
-}
-
 const SCORING_PROMPT = `You are a news analyst. For each news item:
 1. Score it:
    - urgency (0-100): How time-sensitive? Breaking events score 90+.
@@ -73,7 +50,7 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
       });
 
       const result = execSync(
-        buildLlmCommand(argsJson),
+        `openclaw.invoke --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
         { timeout: TIMEOUT_MS + 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
 
