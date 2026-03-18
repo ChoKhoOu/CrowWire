@@ -63,8 +63,14 @@ if ! command -v lobster >/dev/null 2>&1; then
 fi
 info "Lobster OK ($(lobster --version 2>/dev/null || echo 'installed'))"
 
-# Verify openclaw.invoke shim (comes with lobster)
-command -v openclaw.invoke >/dev/null 2>&1 || warn "openclaw.invoke 未在 PATH 中，部分功能（LLM 评分、消息发送）将降级运行"
+# Verify invoke shim (clawd.invoke in lobster >= 2026.1.24, openclaw.invoke in older versions)
+if command -v clawd.invoke >/dev/null 2>&1; then
+    info "Invoke shim: clawd.invoke"
+elif command -v openclaw.invoke >/dev/null 2>&1; then
+    info "Invoke shim: openclaw.invoke"
+else
+    warn "clawd.invoke / openclaw.invoke 均未在 PATH 中，LLM 评分和消息发送将降级运行"
+fi
 
 # ------------------------------------------------------------------
 # Step 1: RSSHub
