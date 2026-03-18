@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { getInvokeShim } from './invoke.js';
 import type { FeedItem, ScoredItem } from '../types.js';
 
 const BATCH_SIZE = 10;
@@ -50,7 +51,7 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
       });
 
       const result = execSync(
-        `openclaw.invoke --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
+        `${getInvokeShim()} --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
         { timeout: TIMEOUT_MS + 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
 

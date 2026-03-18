@@ -9,6 +9,7 @@ const mockedExecSync = vi.mocked(execSync);
 
 // Re-import after mock
 const { runSend } = await import('../src/commands/send.js');
+const { _resetCache } = await import('../src/lib/invoke.js');
 
 // Helper to mock stdin
 function mockStdin(content: string) {
@@ -40,21 +41,20 @@ function mockStdin(content: string) {
 describe('send command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetCache();
   });
 
-  it('passes channel and target to openclaw.invoke when available', async () => {
-    // First call: command -v openclaw.invoke -> success
+  it('uses clawd.invoke when available (lobster >= 2026.1.24)', async () => {
     mockedExecSync.mockImplementation((cmd: string) => {
-      if (typeof cmd === 'string' && cmd.includes('command -v')) return Buffer.from('/usr/bin/openclaw.invoke');
+      if (typeof cmd === 'string' && cmd.includes('command -v clawd.invoke')) return Buffer.from('/usr/bin/clawd.invoke');
       return Buffer.from('');
     });
 
     mockStdin('Test message');
     await runSend('discord', 'channel:123456');
 
-    // Second call should be openclaw.invoke with both channel and target
     const sendCall = mockedExecSync.mock.calls.find(
-      c => typeof c[0] === 'string' && c[0].includes('openclaw.invoke --tool message'),
+      c => typeof c[0] === 'string' && c[0].includes('clawd.invoke --tool message'),
     );
     expect(sendCall).toBeDefined();
     const cmdStr = sendCall![0] as string;
@@ -62,8 +62,23 @@ describe('send command', () => {
     expect(cmdStr).toContain('"target":"channel:123456"');
   });
 
-  it('falls back to openclaw CLI with --channel and --target', async () => {
-    // command -v openclaw.invoke -> fails
+  it('uses openclaw.invoke when clawd.invoke is missing', async () => {
+    mockedExecSync.mockImplementation((cmd: string) => {
+      if (typeof cmd === 'string' && cmd.includes('command -v clawd.invoke')) throw new Error('not found');
+      if (typeof cmd === 'string' && cmd.includes('command -v openclaw.invoke')) return Buffer.from('/usr/bin/openclaw.invoke');
+      return Buffer.from('');
+    });
+
+    mockStdin('Test message');
+    await runSend('discord', 'channel:123456');
+
+    const sendCall = mockedExecSync.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('openclaw.invoke --tool message'),
+    );
+    expect(sendCall).toBeDefined();
+  });
+
+  it('falls back to openclaw CLI when no invoke shim exists', async () => {
     mockedExecSync.mockImplementation((cmd: string) => {
       if (typeof cmd === 'string' && cmd.includes('command -v')) throw new Error('not found');
       return Buffer.from('');
@@ -73,7 +88,7 @@ describe('send command', () => {
     await runSend('discord', 'channel:123456');
 
     const sendCall = mockedExecSync.mock.calls.find(
-      c => typeof c === 'string' ? false : (typeof c[0] === 'string' && c[0].includes('openclaw message send')),
+      c => typeof c[0] === 'string' && c[0].includes('openclaw message send'),
     );
     expect(sendCall).toBeDefined();
     const cmdStr = sendCall![0] as string;
@@ -85,16 +100,15 @@ describe('send command', () => {
     mockStdin('   ');
     await runSend('discord', 'channel:123456');
 
-    // Should not call any send commands (only possibly command -v)
     const sendCalls = mockedExecSync.mock.calls.filter(
-      c => typeof c[0] === 'string' && (c[0].includes('openclaw.invoke --tool') || c[0].includes('openclaw message send')),
+      c => typeof c[0] === 'string' && (c[0].includes('--tool message') || c[0].includes('openclaw message send')),
     );
     expect(sendCalls).toHaveLength(0);
   });
 
   it('invoke path passes message via stdin', async () => {
     mockedExecSync.mockImplementation((cmd: string) => {
-      if (typeof cmd === 'string' && cmd.includes('command -v')) return Buffer.from('/usr/bin/openclaw.invoke');
+      if (typeof cmd === 'string' && cmd.includes('command -v clawd.invoke')) return Buffer.from('/usr/bin/clawd.invoke');
       return Buffer.from('');
     });
 
@@ -102,10 +116,9 @@ describe('send command', () => {
     await runSend('telegram', 'chat:789');
 
     const sendCall = mockedExecSync.mock.calls.find(
-      c => typeof c[0] === 'string' && c[0].includes('openclaw.invoke --tool message'),
+      c => typeof c[0] === 'string' && c[0].includes('--tool message'),
     );
     expect(sendCall).toBeDefined();
-    // invoke path uses stdin for message body
     const opts = sendCall![1] as { input?: string };
     expect(opts.input).toBe('Hello world');
   });
@@ -125,7 +138,6 @@ describe('send command', () => {
     expect(sendCall).toBeDefined();
     const cmdStr = sendCall![0] as string;
     expect(cmdStr).toContain("--message 'Hello world'");
-    // fallback path must NOT use stdin
     const opts = sendCall![1] as { input?: string };
     expect(opts.input).toBeUndefined();
   });

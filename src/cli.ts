@@ -44,7 +44,7 @@ program
 
 program
   .command('score')
-  .description('Read items from stdin, score via LLM (openclaw.invoke llm-task)')
+  .description('Read items from stdin, score via LLM (llm-task via invoke shim)')
   .action(async () => {
     try {
       await runScore();

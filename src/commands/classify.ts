@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { getInvokeShim } from '../lib/invoke.js';
 import {
   getDb, closeDb, bufferItem, drainBuffer,
   getLastDigestTime, updateLastDigestTime,
@@ -117,7 +118,7 @@ function generateMergeSummary(group: EventGroup): string {
   try {
     const argsJson = JSON.stringify({ prompt, input: '', timeoutMs: MERGE_SUMMARY_TIMEOUT_MS });
     const result = execSync(
-      `openclaw.invoke --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
+      `${getInvokeShim()} --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
       { timeout: MERGE_SUMMARY_TIMEOUT_MS + 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     const parsed = JSON.parse(result.trim());

@@ -1,21 +1,14 @@
 import { execSync } from 'node:child_process';
+import { detectInvokeShim } from '../lib/invoke.js';
 import { splitMarkdownMessages } from '../lib/formatter.js';
 import { readStdin } from './shared.js';
 
-function detectSendMethod(): 'openclaw.invoke' | 'openclaw' {
-  try {
-    execSync('command -v openclaw.invoke', { stdio: 'pipe' });
-    return 'openclaw.invoke';
-  } catch {
-    return 'openclaw';
-  }
-}
-
-function sendMessage(method: 'openclaw.invoke' | 'openclaw', channel: string, target: string, text: string): void {
-  if (method === 'openclaw.invoke') {
+function sendMessage(channel: string, target: string, text: string): void {
+  const shim = detectInvokeShim();
+  if (shim) {
     const argsJson = JSON.stringify({ channel, target });
     execSync(
-      `openclaw.invoke --tool message --action send --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
+      `${shim} --tool message --action send --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
       { input: text, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     );
   } else {
@@ -36,10 +29,9 @@ export async function runSend(channel: string, target: string): Promise<void> {
   if (!input.trim()) return;
 
   const messages = splitMarkdownMessages(input);
-  const method = detectSendMethod();
 
   for (const msg of messages) {
     if (!msg.trim()) continue;
-    sendMessage(method, channel, target, msg);
+    sendMessage(channel, target, msg);
   }
 }
