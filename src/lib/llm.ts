@@ -1,5 +1,4 @@
-import { execSync } from 'node:child_process';
-import { getInvokeShim } from './invoke.js';
+import { invokeTool } from './invoke.js';
 import type { FeedItem, ScoredItem } from '../types.js';
 
 const BATCH_SIZE = 10;
@@ -44,18 +43,22 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const argsJson = JSON.stringify({
-        prompt: SCORING_PROMPT,
-        input: JSON.stringify(input),
+      const { output, transport } = await invokeTool({
+        tool: 'llm-task',
+        action: 'json',
+        args: {
+          prompt: SCORING_PROMPT,
+          input: JSON.stringify(input),
+          timeoutMs: TIMEOUT_MS,
+        },
         timeoutMs: TIMEOUT_MS,
       });
 
-      const result = execSync(
-        `${getInvokeShim()} --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
-        { timeout: TIMEOUT_MS + 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      );
+      if (attempt === 0) {
+        process.stderr.write(`[info] LLM scoring via ${transport} transport\n`);
+      }
 
-      const parsed = JSON.parse(result.trim());
+      const parsed = JSON.parse(output.trim());
       const scored = Array.isArray(parsed) ? parsed : (parsed.output ?? parsed.result ?? []);
 
       return mergeScores(items, scored);
@@ -69,8 +72,10 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
     }
   }
 
-  // Total failure — assign default scores
-  process.stderr.write(`[warn] LLM scoring failed after ${MAX_RETRIES + 1} attempts. Using default scores.\n`);
+  process.stderr.write(
+    `[DEGRADED] LLM scoring failed after ${MAX_RETRIES + 1} attempts. ` +
+    `${items.length} items have default scores and NO summary.\n`,
+  );
   return items.map(item => ({
     ...item,
     ...DEFAULT_SCORES,

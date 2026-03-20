@@ -1,5 +1,4 @@
-import { execSync } from 'node:child_process';
-import { getInvokeShim } from '../lib/invoke.js';
+import { invokeTool } from '../lib/invoke.js';
 import {
   getDb, closeDb, bufferItem, drainBuffer,
   getLastDigestTime, updateLastDigestTime,
@@ -63,6 +62,7 @@ export async function runClassify(
     let digest: ScoredItem[] = [];
     let digestFlushed = 0;
     let digestGroups: EventGroup[] | undefined;
+    let summaryDegradedCount = 0;
 
     if (elapsed >= intervalSeconds) {
       const drained = drainBuffer(database);
@@ -79,8 +79,19 @@ export async function runClassify(
         // Generate LLM merge summaries for multi-source groups
         for (const group of digestGroups) {
           if (group.isMultiSource) {
-            group.mergedSummary = generateMergeSummary(group);
+            const summary = await generateMergeSummary(group);
+            if (summary) {
+              group.mergedSummary = summary;
+            } else {
+              summaryDegradedCount++;
+            }
           }
+        }
+
+        if (summaryDegradedCount > 0) {
+          process.stderr.write(
+            `[DEGRADED] ${summaryDegradedCount} merge summary(s) failed — falling back to snippet joining\n`,
+          );
         }
       }
     }
@@ -108,7 +119,7 @@ export async function runClassify(
   }
 }
 
-function generateMergeSummary(group: EventGroup): string {
+async function generateMergeSummary(group: EventGroup): Promise<string | undefined> {
   const sourcesBlock = group.members
     .map(m => `- ${m.source}: ${m.title} -- ${m.content.slice(0, 200)}`)
     .join('\n');
@@ -116,12 +127,16 @@ function generateMergeSummary(group: EventGroup): string {
   const prompt = `用2-3句话简洁总结以下多个来源报道的同一新闻事件（中文输出）：\n${sourcesBlock}`;
 
   try {
-    const argsJson = JSON.stringify({ prompt, input: '', timeoutMs: MERGE_SUMMARY_TIMEOUT_MS });
-    const result = execSync(
-      `${getInvokeShim()} --tool llm-task --action json --args-json '${argsJson.replace(/'/g, "'\\''")}'`,
-      { timeout: MERGE_SUMMARY_TIMEOUT_MS + 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    const parsed = JSON.parse(result.trim());
+    const { output, transport } = await invokeTool({
+      tool: 'llm-task',
+      action: 'json',
+      args: { prompt, input: '', timeoutMs: MERGE_SUMMARY_TIMEOUT_MS },
+      timeoutMs: MERGE_SUMMARY_TIMEOUT_MS,
+    });
+
+    process.stderr.write(`[info] Merge summary via ${transport} transport\n`);
+
+    const parsed = JSON.parse(output.trim());
     const text = typeof parsed === 'string' ? parsed : (parsed.output ?? parsed.result ?? '');
     if (typeof text === 'string' && text.trim().length > 0) {
       return text.trim();
@@ -131,6 +146,5 @@ function generateMergeSummary(group: EventGroup): string {
     process.stderr.write(`[warn] LLM merge summary failed: ${msg}\n`);
   }
 
-  // Fallback: bullet-point titles
-  return group.members.map(m => `- ${m.title}（${m.source}）`).join('\n');
+  return undefined;
 }
