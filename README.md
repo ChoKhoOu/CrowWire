@@ -251,7 +251,7 @@ fetch → dedup → score → classify → format → send
   │        │       │        │          │       └─ 逐条发送（自动分割长消息）
   │        │       │        │          └─ 中文 Markdown（紧急快讯 / 定时摘要）
   │        │       │        └─ 紧急分流 + 缓冲 + 跨源事件聚合
-  │        │       └─ clawd.invoke / openclaw.invoke llm-task（紧急度/相关度/新颖度 + 摘要）
+  │        │       └─ OpenClaw llm-task（HTTP / binary / lobster 三级 transport）
   │        └─ SQLite 哈希去重（identity + content）
   └─ RSSHub RSS/Atom 解析
 ```
@@ -269,7 +269,7 @@ fetch → dedup → score → classify → format → send
 - Docker（用于 RSSHub）
 - [OpenClaw](https://github.com/openclaw/openclaw)（`npm i -g openclaw@latest && openclaw onboard --install-daemon`）
 - [Lobster](https://github.com/openclaw/lobster)（安装脚本会自动安装，也可手动：`npm i -g @clawdbot/lobster@latest`）
-- OpenClaw **llm-task 插件**（安装脚本会自动启用；LLM 评分和摘要依赖此插件提供的 invoke shim：lobster >= 2026.1.24 为 `clawd.invoke`，旧版为 `openclaw.invoke`）
+- OpenClaw **llm-task 插件**（安装脚本会自动启用；LLM 评分和摘要通过三级 transport 调用：HTTP 直连 > PATH binary > Lobster wrapper）
 
 ## 配置
 
@@ -320,12 +320,21 @@ CrowWire · 2026-03-17 14:00
 
 ## LLM 模型配置
 
-CrowWire 通过 invoke shim（`clawd.invoke` 或 `openclaw.invoke`）调用 `llm-task` 工具完成 LLM 评分，模型和 API 由 OpenClaw 配置决定。
+CrowWire 通过三级 transport 调用 OpenClaw `llm-task` 工具完成 LLM 评分，模型和 API 由 OpenClaw 配置决定。
+
+**Transport 优先级：**
+
+| 优先级 | 方式 | 环境变量 | 说明 |
+|--------|------|----------|------|
+| 1 | HTTP 直连 | `CLAWD_URL` + `CLAWD_TOKEN` | 推荐，最可靠 |
+| 2 | HTTP 直连 | `OPENCLAW_GATEWAY_PORT` + `OPENCLAW_GATEWAY_TOKEN` | 自动拼接 `http://127.0.0.1:$PORT` |
+| 3 | PATH binary | — | 检测 `clawd.invoke` / `openclaw.invoke` |
+| 4 | Lobster wrapper | — | `lobster "clawd.invoke ..."` |
+
 `install.sh` 会自动启用 llm-task 插件并添加到 agent allowlist。如需手动确认：
 
 ```bash
 openclaw plugins info llm-task                        # 应显示 Status: enabled
-command -v clawd.invoke || command -v openclaw.invoke  # 应返回路径
 ```
 
 在 `~/.openclaw/openclaw.json` 中设置模型和 API Key：

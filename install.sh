@@ -63,13 +63,20 @@ if ! command -v lobster >/dev/null 2>&1; then
 fi
 info "Lobster OK ($(lobster --version 2>/dev/null || echo 'installed'))"
 
-# Verify invoke shim (clawd.invoke in lobster >= 2026.1.24, openclaw.invoke in older versions)
-if command -v clawd.invoke >/dev/null 2>&1; then
-    info "Invoke shim: clawd.invoke"
+# Verify OpenClaw transport (HTTP preferred, binary/lobster as fallback)
+if [ -n "${CLAWD_URL:-}" ] && [ -n "${CLAWD_TOKEN:-}" ]; then
+    info "Transport: HTTP direct (CLAWD_URL)"
+elif [ -n "${OPENCLAW_GATEWAY_PORT:-}" ] && [ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
+    info "Transport: HTTP direct (OPENCLAW_GATEWAY_PORT=$OPENCLAW_GATEWAY_PORT)"
+elif command -v clawd.invoke >/dev/null 2>&1; then
+    info "Transport: PATH binary (clawd.invoke)"
 elif command -v openclaw.invoke >/dev/null 2>&1; then
-    info "Invoke shim: openclaw.invoke"
+    info "Transport: PATH binary (openclaw.invoke)"
+elif command -v lobster >/dev/null 2>&1; then
+    info "Transport: Lobster wrapper (lobster \"clawd.invoke ...\")"
 else
-    warn "clawd.invoke / openclaw.invoke 均未在 PATH 中，LLM 评分和消息发送将降级运行"
+    warn "未检测到可用的 OpenClaw 通信方式"
+    warn "请设置 CLAWD_URL+CLAWD_TOKEN 或 OPENCLAW_GATEWAY_PORT+OPENCLAW_GATEWAY_TOKEN"
 fi
 
 # ------------------------------------------------------------------
