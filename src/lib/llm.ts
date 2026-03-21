@@ -17,6 +17,49 @@ const SCORING_PROMPT = `You are a news analyst. For each news item:
 
 Return a JSON array with the same items, each having added "urgency", "relevance", "novelty" (integers) and "summary" (string) fields.`;
 
+/**
+ * Unwrap LLM response from any envelope format to the core payload.
+ * Handles: direct value, { output }, { result }, HTTP envelope with details.json or content[].text
+ */
+export function extractLlmPayload(parsed: unknown): unknown {
+  if (Array.isArray(parsed)) return parsed;
+
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+
+    // HTTP envelope: { ok: true, result: { details: { json: ... }, content: [...] } }
+    if (obj.ok && obj.result && typeof obj.result === 'object') {
+      const result = obj.result as Record<string, unknown>;
+
+      // Prefer details.json (already parsed by gateway)
+      if (result.details && typeof result.details === 'object') {
+        const details = result.details as Record<string, unknown>;
+        if (details.json !== undefined) {
+          return details.json;
+        }
+      }
+
+      // Fallback: content[0].text
+      if (Array.isArray(result.content) && result.content.length > 0) {
+        const first = result.content[0] as Record<string, unknown>;
+        if (first.type === 'text' && typeof first.text === 'string') {
+          try {
+            return JSON.parse(first.text);
+          } catch {
+            return first.text;
+          }
+        }
+      }
+    }
+
+    // Legacy formats: { output: ... } or { result: ... }
+    if (obj.output !== undefined) return obj.output;
+    if (obj.result !== undefined) return obj.result;
+  }
+
+  return parsed;
+}
+
 export async function scoreBatch(items: FeedItem[]): Promise<ScoredItem[]> {
   if (items.length === 0) return [];
 
@@ -59,7 +102,8 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
       }
 
       const parsed = JSON.parse(output.trim());
-      const scored = Array.isArray(parsed) ? parsed : (parsed.output ?? parsed.result ?? []);
+      const payload = extractLlmPayload(parsed);
+      const scored = Array.isArray(payload) ? payload : [];
 
       return mergeScores(items, scored);
     } catch (err) {

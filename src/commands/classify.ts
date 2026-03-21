@@ -1,4 +1,5 @@
 import { invokeTool } from '../lib/invoke.js';
+import { extractLlmPayload } from '../lib/llm.js';
 import {
   getDb, closeDb, bufferItem, drainBuffer,
   getLastDigestTime, updateLastDigestTime,
@@ -137,9 +138,10 @@ async function generateMergeSummary(group: EventGroup): Promise<string | undefin
     process.stderr.write(`[info] Merge summary via ${transport} transport\n`);
 
     const parsed = JSON.parse(output.trim());
-    const text = typeof parsed === 'string' ? parsed : (parsed.output ?? parsed.result ?? '');
-    if (typeof text === 'string' && text.trim().length > 0) {
-      return text.trim();
+    const payload = extractLlmPayload(parsed);
+    const text = typeof payload === 'string' ? payload.trim() : undefined;
+    if (text && text.length > 0) {
+      return text;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
