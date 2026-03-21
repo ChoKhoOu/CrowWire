@@ -4,4 +4,4 @@ dist/
 config.yaml
 *.log
 *.db
-crowwire.local.json
+.superset/
