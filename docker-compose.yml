@@ -1,16 +1,32 @@
 services:
   rsshub:
     image: diygod/rsshub:latest
-    restart: unless-stopped
     ports:
       - "1200:1200"
     environment:
-      - NODE_ENV=production
-      - CACHE_TYPE=memory
-      - CACHE_EXPIRE=300
-      - REQUEST_TIMEOUT=30000
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: 300
+      REQUEST_TIMEOUT: 30000
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:1200"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  crowwire:
+    build: .
+    depends_on:
+      rsshub:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - crowwire-data:/app/data
+      - ./feeds.yaml:/app/feeds.yaml:ro
+      - ./targets.yaml:/app/targets.yaml:ro
+    restart: unless-stopped
+    environment:
+      RSSHUB_URL: http://rsshub:1200
+
+volumes:
+  crowwire-data:

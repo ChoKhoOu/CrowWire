@@ -1,28 +1,28 @@
 {
-  "name": "crowwire-cli",
-  "version": "1.0.0",
-  "description": "CrowWire news monitoring CLI for OpenClaw Lobster workflows",
+  "name": "crowwire",
+  "version": "2.0.0",
+  "description": "CrowWire financial news monitoring daemon",
   "type": "module",
   "bin": {
-    "crowwire-cli": "./dist/cli.js"
+    "crowwire-cli": "./dist/daemon.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
+    "start": "node dist/daemon.js",
+    "dev": "tsx src/daemon.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "commander": "^13.1.0",
     "better-sqlite3": "^11.7.0",
     "rss-parser": "^3.13.0",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }
 }
