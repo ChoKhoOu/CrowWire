@@ -1,0 +1,9 @@
+targets:
+  - name: alerts
+    type: discord
+    channel_id: "${DISCORD_URGENT_CHANNEL_ID}"
+    queues: [urgent]
+  - name: digest
+    type: discord
+    channel_id: "${DISCORD_DIGEST_CHANNEL_ID}"
+    queues: [normal]

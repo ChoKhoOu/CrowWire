@@ -54,3 +54,36 @@ export interface ClassifyOutput {
     digest_flushed: number;
   };
 }
+
+// ---- CrowWire v2 Daemon Types ----
+
+export type QueueType = 'urgent' | 'normal'
+
+export type PushTargetType = 'discord'  // extensible: | 'telegram' | 'slack'
+
+export interface PushTargetConfig {
+  name: string
+  type: PushTargetType
+  channel_id: string
+  queues: QueueType[]
+}
+
+export interface TargetsConfig {
+  targets: PushTargetConfig[]
+}
+
+export interface DaemonConfig {
+  fetch_interval: number        // ms, default 20000
+  urgent_flush_interval: number // ms, default 10000
+  urgent_flush_count: number    // default 5
+  digest_flush_interval: number // ms, default 900000
+  urgency_threshold: number     // 0-100, default 75
+  similarity_threshold: number  // 0-1, default 0.55
+  dedup_ttl_hours: number       // default 72
+  sent_event_ttl_hours: number  // default 24
+  content_max_chars: number     // default 500
+  max_items_per_run: number     // default 30
+  db_path: string
+  feeds_config: string
+  targets_config: string
+}
