@@ -1,10 +1,7 @@
-import { invokeTool } from './invoke.js';
+import { createLlmClient, LlmClient } from './llm-client.js';
 import type { FeedItem, ScoredItem } from '../types.js';
 
 const BATCH_SIZE = 10;
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 3000;
-const TIMEOUT_MS = 60_000;
 
 const DEFAULT_SCORES = { urgency: 50, relevance: 50, novelty: 50 };
 
@@ -17,47 +14,16 @@ const SCORING_PROMPT = `You are a news analyst. For each news item:
 
 Return a JSON array with the same items, each having added "urgency", "relevance", "novelty" (integers) and "summary" (string) fields.`;
 
-/**
- * Unwrap LLM response from any envelope format to the core payload.
- * Handles: direct value, { output }, { result }, HTTP envelope with details.json or content[].text
- */
-export function extractLlmPayload(parsed: unknown): unknown {
-  if (Array.isArray(parsed)) return parsed;
+let client: LlmClient | null = null;
 
-  if (parsed && typeof parsed === 'object') {
-    const obj = parsed as Record<string, unknown>;
+function getLlmClient(): LlmClient {
+  if (!client) client = createLlmClient();
+  return client;
+}
 
-    // HTTP envelope: { ok: true, result: { details: { json: ... }, content: [...] } }
-    if (obj.ok && obj.result && typeof obj.result === 'object') {
-      const result = obj.result as Record<string, unknown>;
-
-      // Prefer details.json (already parsed by gateway)
-      if (result.details && typeof result.details === 'object') {
-        const details = result.details as Record<string, unknown>;
-        if (details.json !== undefined) {
-          return details.json;
-        }
-      }
-
-      // Fallback: content[0].text
-      if (Array.isArray(result.content) && result.content.length > 0) {
-        const first = result.content[0] as Record<string, unknown>;
-        if (first.type === 'text' && typeof first.text === 'string') {
-          try {
-            return JSON.parse(first.text);
-          } catch {
-            return first.text;
-          }
-        }
-      }
-    }
-
-    // Legacy formats: { output: ... } or { result: ... }
-    if (obj.output !== undefined) return obj.output;
-    if (obj.result !== undefined) return obj.result;
-  }
-
-  return parsed;
+/** Reset the lazy singleton — for testing only */
+export function _resetLlmClient(): void {
+  client = null;
 }
 
 export async function scoreBatch(items: FeedItem[]): Promise<ScoredItem[]> {
@@ -84,46 +50,29 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
     source: i.source,
   }));
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const { output, transport } = await invokeTool({
-        tool: 'llm-task',
-        action: 'json',
-        args: {
-          prompt: SCORING_PROMPT,
-          input: JSON.stringify(input),
-          timeoutMs: TIMEOUT_MS,
-        },
-        timeoutMs: TIMEOUT_MS,
-      });
+  const userMessage = JSON.stringify(input);
 
-      if (attempt === 0) {
-        process.stderr.write(`[info] LLM scoring via ${transport} transport\n`);
-      }
+  try {
+    // LlmClient handles retries internally (2 retries with exponential backoff)
+    const scored = await getLlmClient().chatCompletionJson<Array<Record<string, unknown>>>(
+      SCORING_PROMPT,
+      userMessage,
+    );
 
-      const parsed = JSON.parse(output.trim());
-      const payload = extractLlmPayload(parsed);
-      const scored = Array.isArray(payload) ? payload : [];
+    const payload = Array.isArray(scored) ? scored : [];
 
-      return mergeScores(items, scored);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[warn] LLM scoring attempt ${attempt + 1}/${MAX_RETRIES + 1} failed: ${msg}\n`);
-
-      if (attempt < MAX_RETRIES) {
-        await sleep(RETRY_DELAY_MS);
-      }
-    }
+    return mergeScores(items, payload);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `[DEGRADED] LLM scoring failed: ${msg}. ` +
+      `${items.length} items have default scores and NO summary.\n`,
+    );
+    return items.map(item => ({
+      ...item,
+      ...DEFAULT_SCORES,
+    }));
   }
-
-  process.stderr.write(
-    `[DEGRADED] LLM scoring failed after ${MAX_RETRIES + 1} attempts. ` +
-    `${items.length} items have default scores and NO summary.\n`,
-  );
-  return items.map(item => ({
-    ...item,
-    ...DEFAULT_SCORES,
-  }));
 }
 
 function mergeScores(originals: FeedItem[], scored: Array<Record<string, unknown>>): ScoredItem[] {
@@ -161,6 +110,3 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}

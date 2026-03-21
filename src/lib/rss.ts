@@ -36,15 +36,19 @@ export async function fetchAllFeeds(
   maxItems: number,
 ): Promise<FeedItem[]> {
   const enabled = feeds.filter(f => f.enabled);
-  const results: FeedItem[] = [];
 
-  for (const feed of enabled) {
-    try {
-      const items = await fetchFeed(feed, maxChars);
-      results.push(...items);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[warn] Failed to fetch "${feed.name}": ${msg}\n`);
+  const settled = await Promise.allSettled(
+    enabled.map(feed => fetchFeed(feed, maxChars)),
+  );
+
+  const results: FeedItem[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled') {
+      results.push(...outcome.value);
+    } else {
+      const msg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      process.stderr.write(`[warn] Failed to fetch "${enabled[i].name}": ${msg}\n`);
     }
   }
 
