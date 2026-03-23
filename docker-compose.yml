@@ -20,12 +20,9 @@ services:
     depends_on:
       rsshub:
         condition: service_healthy
-    env_file: .env
     volumes:
       - crowwire-data:/app/data
-      - ./feeds.yaml:/app/feeds.yaml:ro
-      - ./targets.yaml:/app/targets.yaml:ro
-      - ./filters.yaml:/app/filters.yaml:ro
+      - ./config:/app/config
     restart: unless-stopped
     environment:
       RSSHUB_URL: http://rsshub:1200

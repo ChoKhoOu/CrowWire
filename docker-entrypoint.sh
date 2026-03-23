@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+CONFIG_DIR="${CONFIG_DIR:-/app/config}"
+
+# Copy default configs if not present
+for f in config.yaml feeds.yaml targets.yaml filters.yaml; do
+  if [ ! -f "$CONFIG_DIR/$f" ]; then
+    cp "/app/defaults/$f" "$CONFIG_DIR/$f"
+    echo "[init] Created default $CONFIG_DIR/$f"
+  fi
+done
+
+exec node dist/daemon.js

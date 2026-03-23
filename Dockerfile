@@ -12,10 +12,10 @@ RUN addgroup -S crowwire && adduser -S crowwire -G crowwire
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist/ ./dist/
-COPY feeds.yaml ./
-COPY targets.yaml ./
-COPY filters.yaml ./
-RUN mkdir -p /app/data && chown -R crowwire:crowwire /app
+COPY defaults/ ./defaults/
+COPY docker-entrypoint.sh ./
+RUN mkdir -p /app/data /app/config && chown -R crowwire:crowwire /app
 VOLUME /app/data
+VOLUME /app/config
 USER crowwire
-CMD ["node", "dist/daemon.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
