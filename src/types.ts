@@ -32,6 +32,8 @@ export interface ScoredItem extends FeedItem {
   relevance: number;
   novelty: number;
   summary?: string;
+  blacklisted?: boolean;
+  blacklist_reason?: string;
 }
 
 export interface EventGroup {
@@ -86,4 +88,9 @@ export interface DaemonConfig {
   db_path: string
   feeds_config: string
   targets_config: string
+  filters_config: string        // path, default '/app/filters.yaml'
+}
+
+export interface FiltersConfig {
+  blacklist: string[]  // natural-language category descriptions
 }
