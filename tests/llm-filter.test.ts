@@ -15,7 +15,25 @@ function makeFeedItem(overrides: Partial<FeedItem> = {}): FeedItem {
   };
 }
 
-describe('scoreBatch with blacklist', () => {
+/** Create a mock SSE streaming response from XML content */
+function makeStreamResponse(xmlContent: string) {
+  const sseData = `data: ${JSON.stringify({
+    choices: [{ delta: { content: xmlContent } }],
+  })}\n\ndata: [DONE]\n\n`;
+
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sseData));
+        controller.close();
+      },
+    }),
+  };
+}
+
+describe('scoreBatch with blacklist (XML streaming)', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -37,14 +55,9 @@ describe('scoreBatch with blacklist', () => {
 
   it('without blacklist returns items without blacklisted field', async () => {
     const items = [makeFeedItem()];
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: JSON.stringify([
-          { id: 'test-1', urgency: 80, relevance: 70, novelty: 60, summary: '测试摘要' },
-        ]) } }],
-      }),
-    });
+    fetchMock.mockResolvedValueOnce(makeStreamResponse(
+      '<news_list><news><id>test-1</id><scores><urgency>80</urgency><relevance>70</relevance><novelty>60</novelty></scores><summary>测试摘要</summary></news></news_list>'
+    ));
 
     const result = await scoreBatch(items);
     expect(result[0].urgency).toBe(80);
@@ -56,14 +69,9 @@ describe('scoreBatch with blacklist', () => {
     const items = [makeFeedItem()];
     const blacklist = ['大A个股涨跌相关新闻'];
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: JSON.stringify([
-          { id: 'test-1', urgency: 80, relevance: 70, novelty: 60, summary: '测试', blacklisted: false },
-        ]) } }],
-      }),
-    });
+    fetchMock.mockResolvedValueOnce(makeStreamResponse(
+      '<news_list><news><id>test-1</id><scores><urgency>80</urgency><relevance>70</relevance><novelty>60</novelty></scores><summary>测试</summary><blacklist><hit>false</hit><reason></reason></blacklist></news></news_list>'
+    ));
 
     await scoreBatch(items, blacklist);
 
@@ -80,15 +88,12 @@ describe('scoreBatch with blacklist', () => {
     ];
     const blacklist = ['大A个股涨跌'];
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: JSON.stringify([
-          { id: 'a', urgency: 50, relevance: 50, novelty: 50, summary: '个股', blacklisted: true, blacklist_reason: '大A个股涨跌' },
-          { id: 'b', urgency: 90, relevance: 85, novelty: 70, summary: 'Fed', blacklisted: false },
-        ]) } }],
-      }),
-    });
+    fetchMock.mockResolvedValueOnce(makeStreamResponse(
+      '<news_list>' +
+      '<news><id>a</id><scores><urgency>50</urgency><relevance>50</relevance><novelty>50</novelty></scores><summary>个股</summary><blacklist><hit>true</hit><reason>大A个股涨跌</reason></blacklist></news>' +
+      '<news><id>b</id><scores><urgency>90</urgency><relevance>85</relevance><novelty>70</novelty></scores><summary>Fed</summary><blacklist><hit>false</hit><reason></reason></blacklist></news>' +
+      '</news_list>'
+    ));
 
     const result = await scoreBatch(items, blacklist);
     expect(result[0].blacklisted).toBe(true);
@@ -115,14 +120,9 @@ describe('scoreBatch with blacklist', () => {
     const items = [makeFeedItem({ id: 'reg-1' })];
     const blacklist = ['某个分类'];
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: JSON.stringify([
-          { id: 'reg-1', urgency: 95, relevance: 88, novelty: 72, summary: '回归测试摘要', blacklisted: false },
-        ]) } }],
-      }),
-    });
+    fetchMock.mockResolvedValueOnce(makeStreamResponse(
+      '<news_list><news><id>reg-1</id><scores><urgency>95</urgency><relevance>88</relevance><novelty>72</novelty></scores><summary>回归测试摘要</summary><blacklist><hit>false</hit><reason></reason></blacklist></news></news_list>'
+    ));
 
     const result = await scoreBatch(items, blacklist);
     expect(result[0].urgency).toBe(95);
@@ -132,21 +132,16 @@ describe('scoreBatch with blacklist', () => {
     expect(result[0].blacklisted).toBeUndefined(); // false maps to undefined
   });
 
-  it('mergeScores sets blacklisted=undefined when LLM returns non-boolean', async () => {
+  it('mergeXmlScores sets blacklisted=undefined when XML returns non-true hit', async () => {
     const items = [makeFeedItem({ id: 'nb-1' })];
     const blacklist = ['某分类'];
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: JSON.stringify([
-          { id: 'nb-1', urgency: 60, relevance: 60, novelty: 60, summary: '测试', blacklisted: 'yes', blacklist_reason: 123 },
-        ]) } }],
-      }),
-    });
+    fetchMock.mockResolvedValueOnce(makeStreamResponse(
+      '<news_list><news><id>nb-1</id><scores><urgency>60</urgency><relevance>60</relevance><novelty>60</novelty></scores><summary>测试</summary><blacklist><hit>yes</hit><reason>123</reason></blacklist></news></news_list>'
+    ));
 
     const result = await scoreBatch(items, blacklist);
-    expect(result[0].blacklisted).toBeUndefined(); // 'yes' !== true
-    expect(result[0].blacklist_reason).toBeUndefined(); // 123 is not a string
+    expect(result[0].blacklisted).toBeUndefined(); // 'yes' !== 'true'
+    expect(result[0].blacklist_reason).toBeUndefined(); // not blacklisted, so no reason
   });
 });

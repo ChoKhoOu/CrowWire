@@ -1,18 +1,35 @@
 import { createLlmClient, LlmClient } from './llm-client.js';
+import { createNewsXmlParser, mergeXmlScores } from './xml-parser.js';
+import type { ParsedNewsItem } from './xml-parser.js';
+import { DEFAULT_SCORES } from './scoring-utils.js';
 import type { FeedItem, ScoredItem } from '../types.js';
 
-const BATCH_SIZE = 10;
-
-const DEFAULT_SCORES = { urgency: 50, relevance: 50, novelty: 50 };
+const BATCH_SIZE = 30;
 
 const SCORING_PROMPT = `You are a news analyst. For each news item:
 1. Score it:
    - urgency (0-100): How time-sensitive? Breaking events score 90+.
    - relevance (0-100): How important to a tech/finance professional?
    - novelty (0-100): How surprising or new is this information?
-2. Write a "summary" (string): A Chinese summary in 30-150 characters. It MUST add context or details beyond the title — do NOT repeat or rephrase the title. Focus on the key facts, numbers, or implications. More important news (higher urgency/relevance) deserves a longer, more detailed summary.
+2. Write a summary in Chinese (30-150 characters). It MUST add context or details beyond the title — do NOT repeat or rephrase the title.
 
-Return a JSON array with the same items, each having added "urgency", "relevance", "novelty" (integers) and "summary" (string) fields.`;
+Return your response as XML using EXACTLY these tags and no others:
+<news_list>
+  <news>
+    <id>{item id}</id>
+    <scores>
+      <urgency>{0-100}</urgency>
+      <relevance>{0-100}</relevance>
+      <novelty>{0-100}</novelty>
+    </scores>
+    <summary>{Chinese summary}</summary>
+  </news>
+</news_list>
+
+IMPORTANT:
+- Use ONLY the tags shown above. Do not add any other XML tags.
+- Do NOT wrap the output in markdown code fences or any other formatting.
+- Output the XML directly with no preamble or explanation.`;
 
 let client: LlmClient | null = null;
 
@@ -57,19 +74,28 @@ async function scoreSingleBatch(items: FeedItem[], blacklist?: string[]): Promis
     if (blacklist.length > 50) {
       process.stderr.write(`[filter] Warning: ${blacklist.length} blacklist categories may impact LLM response quality\n`);
     }
-    prompt += `\n\n3. For each item, also evaluate against these blacklist categories:\n${blacklist.map((c, i) => `   ${i + 1}. ${c}`).join('\n')}\n   - If the item matches ANY blacklist category, set "blacklisted": true and "blacklist_reason": "<matched category description>"\n   - If no match, set "blacklisted": false`;
+    prompt += `\n\nAlso evaluate each item against these blacklist categories:\n${blacklist.map((c, i) => `${i + 1}. ${c}`).join('\n')}\nFor each item, add a <blacklist> block inside <news>:\n<blacklist>\n  <hit>true or false</hit>\n  <reason>matched category description or empty</reason>\n</blacklist>`;
   }
 
   try {
-    // LlmClient handles retries internally (2 retries with exponential backoff)
-    const scored = await getLlmClient().chatCompletionJson<Array<Record<string, unknown>>>(
-      prompt,
-      userMessage,
-    );
+    const parsed: ParsedNewsItem[] = [];
+    const parser = createNewsXmlParser(item => parsed.push(item));
 
-    const payload = Array.isArray(scored) ? scored : [];
+    await getLlmClient().chatCompletionStream(prompt, userMessage, (chunk) => {
+      parser.write(chunk);
+    });
+    parser.end();
 
-    return mergeScores(items, payload);
+    // Zero-item stream degradation logging
+    if (parsed.length === 0) {
+      process.stderr.write(
+        `[DEGRADED] LLM stream produced zero parseable <news> items. ` +
+        `${items.length} items have default scores and NO summary.\n`,
+      );
+      return items.map(item => ({ ...item, ...DEFAULT_SCORES }));
+    }
+
+    return mergeXmlScores(items, parsed);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(
@@ -83,34 +109,8 @@ async function scoreSingleBatch(items: FeedItem[], blacklist?: string[]): Promis
   }
 }
 
-function mergeScores(originals: FeedItem[], scored: Array<Record<string, unknown>>): ScoredItem[] {
-  const scoreMap = new Map<string, Record<string, unknown>>();
-  for (const s of scored) {
-    if (s.id && typeof s.id === 'string') {
-      scoreMap.set(s.id, s);
-    }
-  }
-
-  return originals.map(item => {
-    const s = scoreMap.get(item.id);
-    return {
-      ...item,
-      urgency: safeInt(s?.urgency, DEFAULT_SCORES.urgency),
-      relevance: safeInt(s?.relevance, DEFAULT_SCORES.relevance),
-      novelty: safeInt(s?.novelty, DEFAULT_SCORES.novelty),
-      summary: typeof s?.summary === 'string' && s.summary.trim() ? s.summary.trim() : undefined,
-      blacklisted: s?.blacklisted === true ? true : undefined,
-      blacklist_reason: typeof s?.blacklist_reason === 'string' ? s.blacklist_reason : undefined,
-    };
-  });
-}
-
-function safeInt(val: unknown, fallback: number): number {
-  if (typeof val === 'number' && Number.isInteger(val) && val >= 0 && val <= 100) {
-    return val;
-  }
-  return fallback;
-}
+// Re-export safeInt for backward compatibility (tests import from llm.js)
+export { safeInt } from './scoring-utils.js';
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = [];
