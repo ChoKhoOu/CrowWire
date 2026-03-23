@@ -26,21 +26,21 @@ export function _resetLlmClient(): void {
   client = null;
 }
 
-export async function scoreBatch(items: FeedItem[]): Promise<ScoredItem[]> {
+export async function scoreBatch(items: FeedItem[], blacklist?: string[]): Promise<ScoredItem[]> {
   if (items.length === 0) return [];
 
   const batches = chunk(items, BATCH_SIZE);
   const results: ScoredItem[] = [];
 
   for (const batch of batches) {
-    const scored = await scoreSingleBatch(batch);
+    const scored = await scoreSingleBatch(batch, blacklist);
     results.push(...scored);
   }
 
   return results;
 }
 
-async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
+async function scoreSingleBatch(items: FeedItem[], blacklist?: string[]): Promise<ScoredItem[]> {
   const input = items.map(i => ({
     id: i.id,
     title: i.title,
@@ -52,10 +52,18 @@ async function scoreSingleBatch(items: FeedItem[]): Promise<ScoredItem[]> {
 
   const userMessage = JSON.stringify(input);
 
+  let prompt = SCORING_PROMPT;
+  if (blacklist && blacklist.length > 0) {
+    if (blacklist.length > 50) {
+      process.stderr.write(`[filter] Warning: ${blacklist.length} blacklist categories may impact LLM response quality\n`);
+    }
+    prompt += `\n\n3. For each item, also evaluate against these blacklist categories:\n${blacklist.map((c, i) => `   ${i + 1}. ${c}`).join('\n')}\n   - If the item matches ANY blacklist category, set "blacklisted": true and "blacklist_reason": "<matched category description>"\n   - If no match, set "blacklisted": false`;
+  }
+
   try {
     // LlmClient handles retries internally (2 retries with exponential backoff)
     const scored = await getLlmClient().chatCompletionJson<Array<Record<string, unknown>>>(
-      SCORING_PROMPT,
+      prompt,
       userMessage,
     );
 
@@ -91,6 +99,8 @@ function mergeScores(originals: FeedItem[], scored: Array<Record<string, unknown
       relevance: safeInt(s?.relevance, DEFAULT_SCORES.relevance),
       novelty: safeInt(s?.novelty, DEFAULT_SCORES.novelty),
       summary: typeof s?.summary === 'string' && s.summary.trim() ? s.summary.trim() : undefined,
+      blacklisted: s?.blacklisted === true ? true : undefined,
+      blacklist_reason: typeof s?.blacklist_reason === 'string' ? s.blacklist_reason : undefined,
     };
   });
 }
