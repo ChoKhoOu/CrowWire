@@ -1,6 +1,6 @@
 import { getDb, closeDb, isSeenItem, markSeen, cleanupExpired, getRecentSentEvents, recordSentEvent, cleanupExpiredSentEvents } from './lib/db.js';
 import { loadConfig } from './lib/config.js';
-import { loadTargets, loadDaemonConfig } from './lib/target-config.js';
+import { loadTargets, loadDaemonConfig, loadFilters, computeFileHash } from './lib/target-config.js';
 import { createLlmClient } from './lib/llm-client.js';
 import type { LlmClient } from './lib/llm-client.js';
 import { createPushTargets, getTargetsForQueue } from './lib/push-target.js';
@@ -15,7 +15,7 @@ import { fetchAllFeeds } from './lib/rss.js';
 import { groupByEvent } from './lib/aggregator.js';
 import { formatUrgent, formatDigestGrouped } from './lib/formatter.js';
 import { computePairwiseSimilarity } from './lib/similarity.js';
-import type { FeedsConfig, DaemonConfig, ScoredItem, FeedItem } from './types.js';
+import type { FeedsConfig, DaemonConfig, ScoredItem, FeedItem, FiltersConfig } from './types.js';
 import type Database from 'better-sqlite3';
 
 class CrowWireDaemon {
@@ -30,12 +30,20 @@ class CrowWireDaemon {
   private running = false;
   private stopped = false;
   private stats = { itemsProcessed: 0, messagesSent: 0, pipelineRuns: 0, llmCalls: 0 };
+  private filtersConfig: FiltersConfig = { blacklist: [] };
+  private configHashes: Map<string, string | null> = new Map();
 
   async start(): Promise<void> {
     // 1. Load configs
     this.daemonConfig = loadDaemonConfig();
     this.feedsConfig = loadConfig(this.daemonConfig.feeds_config);
     const targetsConfig = loadTargets(this.daemonConfig.targets_config);
+    this.filtersConfig = loadFilters(this.daemonConfig.filters_config);
+
+    // Cache initial config hashes
+    this.configHashes.set('feeds', computeFileHash(this.daemonConfig.feeds_config));
+    this.configHashes.set('targets', computeFileHash(this.daemonConfig.targets_config));
+    this.configHashes.set('filters', computeFileHash(this.daemonConfig.filters_config));
 
     // 2. Init DB — getDb() handles base schema initialization
     this.db = getDb(this.daemonConfig.db_path);
@@ -114,6 +122,53 @@ class CrowWireDaemon {
     }, this.daemonConfig.fetch_interval);
   }
 
+  private async reloadConfigs(): Promise<void> {
+    // Check feeds.yaml
+    const feedsHash = computeFileHash(this.daemonConfig.feeds_config);
+    if (feedsHash !== this.configHashes.get('feeds')) {
+      try {
+        this.feedsConfig = loadConfig(this.daemonConfig.feeds_config);
+        this.configHashes.set('feeds', feedsHash);
+        process.stderr.write(`[daemon] Reloaded feeds.yaml (${this.feedsConfig.feeds.filter(f => f.enabled !== false).length} feeds)\n`);
+      } catch (err) {
+        process.stderr.write(`[daemon] Failed to reload feeds.yaml: ${(err as Error).message}\n`);
+      }
+    }
+
+    // Check targets.yaml — create-before-destroy to prevent target loss on failure
+    const targetsHash = computeFileHash(this.daemonConfig.targets_config);
+    if (targetsHash !== this.configHashes.get('targets')) {
+      try {
+        const targetsConfig = loadTargets(this.daemonConfig.targets_config);
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        if (!botToken) throw new Error('Missing DISCORD_BOT_TOKEN env var');
+        const newTargets = createPushTargets(targetsConfig, botToken);
+        const oldTargets = this.pushTargets;
+        this.pushTargets = newTargets;
+        this.configHashes.set('targets', targetsHash);
+        process.stderr.write(`[daemon] Reloaded targets.yaml (${this.pushTargets.length} targets)\n`);
+        for (const target of oldTargets) {
+          try { await target.destroy(); } catch {}
+        }
+      } catch (err) {
+        process.stderr.write(`[daemon] Failed to reload targets.yaml: ${(err as Error).message}\n`);
+      }
+    }
+
+    // Check filters.yaml
+    const filtersHash = computeFileHash(this.daemonConfig.filters_config);
+    if (filtersHash !== this.configHashes.get('filters')) {
+      try {
+        this.filtersConfig = loadFilters(this.daemonConfig.filters_config);
+        this.configHashes.set('filters', filtersHash);
+        const count = this.filtersConfig.blacklist.length;
+        process.stderr.write(`[daemon] Reloaded filters.yaml (${count} blacklist ${count === 1 ? 'rule' : 'rules'})\n`);
+      } catch (err) {
+        process.stderr.write(`[daemon] Failed to reload filters.yaml: ${(err as Error).message}\n`);
+      }
+    }
+  }
+
   private async runPipeline(): Promise<void> {
     if (this.running) {
       process.stderr.write('[daemon] Pipeline already running, skipping\n');
@@ -123,6 +178,8 @@ class CrowWireDaemon {
     this.stats.pipelineRuns++;
 
     try {
+      // 0. Hot-reload configs
+      await this.reloadConfigs();
       // 1. Fetch RSS
       const feeds = this.feedsConfig.feeds.filter(f => f.enabled !== false);
       const allItems = await fetchAllFeeds(
@@ -149,12 +206,39 @@ class CrowWireDaemon {
       }
 
       // 3. Score via LLM
-      const scored = await scoreBatch(newItems);
+      const blacklist = this.filtersConfig.blacklist;
+      const scored = await scoreBatch(newItems, blacklist.length > 0 ? blacklist : undefined);
+
+      // 3.5 Filter blacklisted items
+      const passed: ScoredItem[] = [];
+      if (blacklist.length > 0) {
+        const filtered: ScoredItem[] = [];
+        for (const item of scored) {
+          if (item.blacklisted) {
+            filtered.push(item);
+          } else {
+            passed.push(item);
+          }
+        }
+        if (filtered.length > 0) {
+          for (const item of filtered) {
+            process.stderr.write(`[filter] Excluded: "${item.title}" (reason: ${item.blacklist_reason || 'blacklisted'})\n`);
+          }
+          process.stderr.write(`[filter] ${filtered.length} items filtered by blacklist\n`);
+        }
+      } else {
+        passed.push(...scored);
+      }
+
+      if (passed.length === 0) {
+        this.running = false;
+        return;
+      }
 
       // 4. LLM-assisted dedup
       const recentSent = getRecentSentEvents(this.db, this.daemonConfig.sent_event_ttl_hours);
       const dedupedItems = await llmDedup(
-        scored,
+        passed,
         recentSent.map(e => ({ title: e.title, content: e.content })),
         this.llmClient,
         this.db,
