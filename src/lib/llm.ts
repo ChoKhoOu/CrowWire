@@ -10,7 +10,12 @@ const SCORING_PROMPT = `You are a news analyst. You will receive a JSON array of
 
 For each news item:
 1. Score it:
-   - urgency (0-100): How time-sensitive? Breaking events score 90+.
+   - urgency (0-100): How time-sensitive is this for trading/investment decisions?
+     90+: Military conflict, surprise rate decisions, major market crashes/halts, sanctions, sudden leader resignation
+     70-89: Geopolitical ceasefire/escalation, unexpected macro data, large single-day moves (index ≥3%, commodity ≥4%), major M&A
+     40-69: Scheduled policy meetings, earnings reports, routine economic data releases
+     20-39: Industry trends, analyst outlook, corporate strategy updates
+     0-19: Routine political activities (state visits, inspections, forums), human interest, lifestyle
    - relevance (0-100): How important to a tech/finance professional?
    - novelty (0-100): How surprising or new is this information?
 2. Write a summary in Chinese (30-150 characters).
