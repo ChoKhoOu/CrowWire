@@ -10,12 +10,12 @@ const SCORING_PROMPT = `You are a news analyst. You will receive a JSON array of
 
 For each news item:
 1. Score it:
-   - urgency (0-100): How time-sensitive is this for trading/investment decisions?
-     90+: Military conflict, surprise rate decisions, major market crashes/halts, sanctions, sudden leader resignation
-     70-89: Geopolitical ceasefire/escalation, unexpected macro data, large single-day moves (index ≥3%, commodity ≥4%), major M&A
-     40-69: Scheduled policy meetings, earnings reports, routine economic data releases
-     20-39: Industry trends, analyst outlook, corporate strategy updates
-     0-19: Routine political activities (state visits, inspections, forums), human interest, lifestyle
+   - urgency (0-100): How time-sensitive is this event? Score by real-world impact and immediacy.
+     90+: Military conflict/strikes, major terrorist attacks, surprise rate decisions, market crashes/halts, critical infrastructure attacks (zero-day exploits on widely-used systems), major earthquakes/tsunamis, pandemic declarations, sudden leader resignation/coup
+     70-89: Geopolitical ceasefire/escalation, sanctions, unexpected macro data, large single-day moves (index ≥3%, commodity ≥4%), major M&A, major tech platform outages (AWS/Google/Azure), severe weather warnings (typhoon landfall), disease outbreak alerts, large-scale protests/civil unrest
+     40-69: Scheduled policy meetings, earnings reports, routine economic data, new AI regulations/policies, product launches, clinical trial results, moderate natural disasters
+     20-39: Industry trends, analyst outlook, corporate strategy updates, tech conference announcements, routine software updates
+     0-19: Routine political activities (state visits, inspections, forums), human interest, lifestyle, celebrity news
    - relevance (0-100): How important to a tech/finance professional?
    - novelty (0-100): How surprising or new is this information?
 2. Write a summary in Chinese (30-150 characters).
