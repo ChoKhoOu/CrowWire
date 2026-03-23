@@ -1,67 +1,111 @@
 # CrowWire
 
-自部署的财经新闻监控 daemon。自动抓取 RSS 源、去重、LLM 评分、LLM 辅助去重、跨源事件聚合，通过双优先级队列推送紧急快讯和定时摘要到 Discord。
+自部署的新闻监控 daemon。自动抓取 RSS 源、去重、LLM 评分、LLM 辅助去重、跨源事件聚合，通过双优先级队列推送紧急快讯和定时摘要到 Discord。
 
-`docker compose up` 一键启动，无需任何外部平台依赖。
+`docker compose up` 一键启动，无需克隆仓库。
 
 ## 快速开始
 
-### 1. 克隆仓库
+### 1. 创建项目目录
 
 ```bash
-git clone https://github.com/ChoKhoOu/CrowWire.git
-cd CrowWire
+mkdir crowwire && cd crowwire
 ```
 
-### 2. 配置环境变量
+### 2. 创建 docker-compose.yml
+
+```yaml
+services:
+  rsshub:
+    image: diygod/rsshub:latest
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: 300
+      REQUEST_TIMEOUT: 30000
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  crowwire:
+    image: ghcr.io/chokhoou/crowwire:latest
+    depends_on:
+      rsshub:
+        condition: service_healthy
+    volumes:
+      - crowwire-data:/app/data
+      - ./config:/app/config
+    restart: unless-stopped
+    environment:
+      RSSHUB_URL: http://rsshub:1200
+
+volumes:
+  crowwire-data:
+```
+
+### 3. 首次启动（生成默认配置）
 
 ```bash
-cp .env.example .env
+mkdir -p config
+docker compose up -d
 ```
 
-编辑 `.env`，填写必填项：
+首次启动会自动在 `config/` 下生成默认配置文件：
 
-```env
-# LLM 配置（OpenAI 兼容 API）
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=sk-your-key-here
-LLM_MODEL=gpt-4o-mini
-
-# Discord Bot
-DISCORD_BOT_TOKEN=your-bot-token
-DISCORD_URGENT_CHANNEL_ID=123456789
-DISCORD_DIGEST_CHANNEL_ID=987654321
+```
+config/
+├── config.yaml      # LLM、Discord、daemon 参数
+├── feeds.yaml       # RSS 源
+├── targets.yaml     # 推送目标
+└── filters.yaml     # 黑名单过滤
 ```
 
-> **Discord Bot 设置**：在 [Discord Developer Portal](https://discord.com/developers/applications) 创建 Application → Bot，复制 Token。邀请 Bot 到你的服务器，确保 Bot 有目标频道的发送消息权限。频道 ID 通过右键频道 → 复制频道 ID 获取（需开启开发者模式）。
+### 4. 编辑配置
 
-### 3. 配置推送目标（可选）
+```bash
+# 停止服务
+docker compose down
+```
 
-编辑 `targets.yaml` 自定义推送路由：
+编辑 `config/config.yaml`，填写 LLM API 和 Discord Bot：
+
+```yaml
+llm:
+  base_url: https://api.openai.com/v1
+  api_key: sk-your-key-here
+  model: gpt-4o-mini
+
+discord:
+  bot_token: your-bot-token-here
+```
+
+编辑 `config/targets.yaml`，填写 Discord 频道 ID：
 
 ```yaml
 targets:
   - name: alerts
     type: discord
-    channel_id: "${DISCORD_URGENT_CHANNEL_ID}"
+    channel_id: "123456789"    # 紧急快讯频道
     queues: [urgent]
   - name: digest
     type: discord
-    channel_id: "${DISCORD_DIGEST_CHANNEL_ID}"
+    channel_id: "987654321"    # 定时摘要频道
     queues: [normal]
 ```
 
-`${VAR}` 语法会自动从 `.env` 读取对应环境变量。
+> **Discord Bot 设置**：在 [Discord Developer Portal](https://discord.com/developers/applications) 创建 Application → Bot，复制 Token。邀请 Bot 到你的服务器，确保 Bot 有目标频道的发送消息权限。频道 ID 通过右键频道 → 复制频道 ID 获取（需开启开发者模式）。
 
-### 4. 启动
+### 5. 重新启动
 
 ```bash
 docker compose up -d
 ```
 
-完成。CrowWire daemon + RSSHub 将自动启动并开始监控。
-
-### 5. 查看日志
+### 6. 查看日志
 
 ```bash
 docker compose logs -f crowwire
@@ -70,53 +114,74 @@ docker compose logs -f crowwire
 ---
 
 <details>
-<summary>🤖 AI 安装指引（LLM 专用 — 点击展开）</summary>
+<summary>AI Installation Guide (for LLM agents — click to expand)</summary>
 
-### LLM Agent 安装流程
+### LLM Agent Setup Flow
 
-适用于 Claude Code、Cursor 等 AI 编程助手自动安装 CrowWire。
+For Claude Code, Cursor, and other AI coding assistants to set up CrowWire automatically.
 
-#### 步骤
+#### Prerequisites
 
-1. 克隆仓库到目标目录：
+- Docker and Docker Compose installed on the target machine
+- An OpenAI API key (or compatible provider using the Responses API)
+- A Discord Bot Token with message permissions
+
+#### Steps
+
+1. Create project directory and docker-compose.yml:
 ```bash
-git clone https://github.com/ChoKhoOu/CrowWire.git
-cd CrowWire
+mkdir -p crowwire/config && cd crowwire
 ```
 
-2. 复制环境变量模板：
+2. Write the `docker-compose.yml` from the Quick Start section above.
+
+3. Start once to generate default configs:
 ```bash
-cp .env.example .env
+docker compose up -d
+# Wait for config files to be generated
+sleep 5
+docker compose down
 ```
 
-3. 向用户询问以下信息并写入 `.env`：
-   - **LLM API**：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`（支持任何 OpenAI 兼容端点）
-   - **Discord Bot Token**：`DISCORD_BOT_TOKEN`
-   - **Discord 频道 ID**：`DISCORD_URGENT_CHANNEL_ID`（紧急快讯频道）、`DISCORD_DIGEST_CHANNEL_ID`（定时摘要频道）
+4. Ask the user for the following and write to `config/config.yaml`:
+   - **LLM API**: `llm.base_url`, `llm.api_key`, `llm.model` (must support OpenAI Responses API at `/v1/responses`)
+   - **Discord Bot Token**: `discord.bot_token`
 
-4. 可选：编辑 `feeds.yaml` 自定义 RSS 源，编辑 `targets.yaml` 自定义推送路由。
+5. Ask the user for Discord channel IDs and write to `config/targets.yaml`:
+   - `channel_id` for urgent alerts queue
+   - `channel_id` for digest/normal queue
 
-5. 启动服务：
+6. Optional: edit `config/feeds.yaml` to customize RSS sources, edit `config/filters.yaml` to add blacklist categories.
+
+7. Start the service:
 ```bash
 docker compose up -d
 ```
 
-6. 验证：
+8. Verify:
 ```bash
 docker compose logs crowwire | head -20
-# 应看到 "[daemon] CrowWire daemon started" 和 feed/target 数量信息
+# Should see "[daemon] CrowWire daemon started" and feed/target count
 ```
 
-#### 更新
+#### Update
 
 ```bash
-cd /path/to/CrowWire
-git pull
-docker compose build crowwire
+cd /path/to/crowwire
+docker compose pull crowwire
 docker compose up -d
 ```
 
-`.env`、`feeds.yaml`、`targets.yaml` 在更新时不会被覆盖。
+Config files in `config/` are preserved across updates.
+
+#### LLM API Compatibility
+
+CrowWire uses the **OpenAI Responses API** (`/v1/responses` endpoint). This is **not** the Chat Completions API. Ensure the configured LLM provider supports this endpoint. Key differences:
+
+- Endpoint: `/v1/responses` (not `/v1/chat/completions`)
+- System prompt via `instructions` field (not messages array)
+- Streaming uses `response.output_text.delta` events (not `choices[0].delta`)
+- JSON mode via `text.format` (not `response_format`)
 
 </details>
 
@@ -155,32 +220,38 @@ docker compose up -d
 - **紧急去重** — 已发送的紧急事件不会重复推送
 - **保守合并** — 完全连接聚类（complete-linkage），宁可漏合不可误合
 - **崩溃恢复** — 紧急队列持久化到 SQLite，daemon 重启后自动恢复
-- **零外部依赖** — 不依赖任何特定平台，通过 OpenAI 兼容 API 调用 LLM
+- **配置热重载** — feeds、targets、filters 文件变更后自动重新加载
 
 ## 配置
 
-### 环境变量（`.env`）
+### 主配置（`config/config.yaml`）
 
-| 变量 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `LLM_BASE_URL` | ✅ | — | OpenAI 兼容 API 端点 |
-| `LLM_API_KEY` | ✅ | — | API Key |
-| `LLM_MODEL` | ✅ | — | 模型名称（如 `gpt-4o-mini`、`deepseek-chat`） |
-| `DISCORD_BOT_TOKEN` | ✅ | — | Discord Bot Token |
-| `DISCORD_URGENT_CHANNEL_ID` | ✅ | — | 紧急快讯频道 ID |
-| `DISCORD_DIGEST_CHANNEL_ID` | ✅ | — | 定时摘要频道 ID |
-| `FETCH_INTERVAL` | | `20000` | RSS 拉取间隔（ms） |
-| `URGENT_FLUSH_INTERVAL` | | `10000` | 紧急队列 flush 间隔（ms） |
-| `URGENT_FLUSH_COUNT` | | `5` | 紧急队列数量触发阈值 |
-| `DIGEST_FLUSH_INTERVAL` | | `900000` | 摘要队列 flush 间隔（ms，默认 15min） |
-| `URGENCY_THRESHOLD` | | `75` | 紧急推送阈值（0-100） |
-| `SIMILARITY_THRESHOLD` | | `0.55` | 跨源聚合相似度阈值 |
-| `DEDUP_TTL_HOURS` | | `72` | 去重记录保留时长（小时） |
-| `SENT_EVENT_TTL_HOURS` | | `24` | 已发送紧急事件保留时长（小时） |
-| `CONTENT_MAX_CHARS` | | `500` | 每条新闻最大内容长度 |
-| `MAX_ITEMS_PER_RUN` | | `30` | 每次拉取最大条数 |
+```yaml
+# LLM API（OpenAI Responses API）
+llm:
+  base_url: https://api.openai.com/v1
+  api_key: sk-your-key-here
+  model: gpt-4o-mini
 
-### RSS 源（`feeds.yaml`）
+# Discord Bot
+discord:
+  bot_token: your-bot-token-here
+
+# Daemon 参数（全部可选，以下为默认值）
+daemon:
+  fetch_interval: 20000          # RSS 拉取间隔（ms）
+  urgent_flush_interval: 10000   # 紧急队列 flush 间隔（ms）
+  urgent_flush_count: 5          # 紧急队列数量触发阈值
+  digest_flush_interval: 900000  # 摘要队列 flush 间隔（ms，默认 15min）
+  urgency_threshold: 75          # 紧急推送阈值（0-100）
+  similarity_threshold: 0.55     # 跨源聚合相似度阈值（0-1）
+  dedup_ttl_hours: 72            # 去重记录保留时长（小时）
+  sent_event_ttl_hours: 24       # 已发送紧急事件保留时长（小时）
+  content_max_chars: 500         # 每条新闻最大内容长度
+  max_items_per_run: 30          # 每次拉取最大条数
+```
+
+### RSS 源（`config/feeds.yaml`）
 
 ```yaml
 feeds:
@@ -193,21 +264,29 @@ feeds:
   # 更多源参考 https://docs.rsshub.app
 ```
 
-### 推送目标（`targets.yaml`）
+### 推送目标（`config/targets.yaml`）
 
 ```yaml
 targets:
-  - name: alerts           # 目标名称
-    type: discord           # 推送类型（目前支持 discord）
-    channel_id: "${DISCORD_URGENT_CHANNEL_ID}"  # 频道 ID（支持 ${ENV_VAR} 展开）
-    queues: [urgent]        # 接收的队列类型
+  - name: alerts
+    type: discord
+    channel_id: "123456789"
+    queues: [urgent]
   - name: digest
     type: discord
-    channel_id: "${DISCORD_DIGEST_CHANNEL_ID}"
+    channel_id: "987654321"
     queues: [normal]
 ```
 
-支持将紧急消息和摘要推送到不同频道。推送目标接口可扩展，未来可添加 Telegram、Slack 等。
+### 黑名单过滤（`config/filters.yaml`）
+
+```yaml
+blacklist:
+  - "大A个股涨跌、股价、涨停板相关新闻"
+  - "国家领导人常规考察、调研、座谈会等礼节性政治活动（非突发政策变动或重大人事调整）"
+```
+
+每条规则为自然语言描述，LLM 评分时判断新闻是否命中。
 
 ## 输出格式
 
@@ -253,8 +332,8 @@ docker compose restart crowwire
 # 查看 RSSHub 日志
 docker compose logs rsshub
 
-# 更新
-git pull && docker compose build crowwire && docker compose up -d
+# 更新镜像
+docker compose pull crowwire && docker compose up -d
 
 # 停止
 docker compose down
@@ -268,9 +347,9 @@ docker compose down -v
 ```bash
 npm install
 npm run build        # TypeScript 编译
-npm test             # 运行全部 130 个测试
+npm test             # 运行测试
 npm run test:watch   # 监听模式
-npm run dev          # 本地开发运行 daemon
+CONFIG_DIR=./config npm run dev   # 本地开发运行 daemon
 ```
 
 ## 默认 RSS 源
