@@ -107,8 +107,8 @@ export function loadDaemonConfig(): DaemonConfig {
     content_max_chars:     envNum('CONTENT_MAX_CHARS',      500),
     max_items_per_run:     envNum('MAX_ITEMS_PER_RUN',      30),
     db_path:               envStr('DB_PATH',               '/app/data/crowwire.db'),
-    feeds_config:          envStr('FEEDS_CONFIG',          '/app/feeds.yaml'),
-    targets_config:        envStr('TARGETS_CONFIG',        '/app/targets.yaml'),
-    filters_config:        envStr('FILTERS_CONFIG',        '/app/filters.yaml'),
+    feeds_config:          envStr('FEEDS_CONFIG',          '/app/config/feeds.yaml'),
+    targets_config:        envStr('TARGETS_CONFIG',        '/app/config/targets.yaml'),
+    filters_config:        envStr('FILTERS_CONFIG',        '/app/config/filters.yaml'),
   };
 }

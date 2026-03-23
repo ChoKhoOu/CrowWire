@@ -71,9 +71,9 @@ describe('loadDaemonConfig', () => {
     expect(cfg.content_max_chars).toBe(500);
     expect(cfg.max_items_per_run).toBe(30);
     expect(cfg.db_path).toBe('/app/data/crowwire.db');
-    expect(cfg.feeds_config).toBe('/app/feeds.yaml');
-    expect(cfg.targets_config).toBe('/app/targets.yaml');
-    expect(cfg.filters_config).toBe('/app/filters.yaml');
+    expect(cfg.feeds_config).toBe('/app/config/feeds.yaml');
+    expect(cfg.targets_config).toBe('/app/config/targets.yaml');
+    expect(cfg.filters_config).toBe('/app/config/filters.yaml');
   });
 
   it('overrides numeric values from env vars', () => {

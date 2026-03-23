@@ -134,7 +134,7 @@ describe('loadDaemonConfig with FILTERS_CONFIG', () => {
 
   it('returns default filters_config path', () => {
     const cfg = loadDaemonConfig();
-    expect(cfg.filters_config).toBe('/app/filters.yaml');
+    expect(cfg.filters_config).toBe('/app/config/filters.yaml');
   });
 
   it('overrides filters_config from env var', () => {

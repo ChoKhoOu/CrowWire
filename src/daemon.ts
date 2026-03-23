@@ -1,4 +1,5 @@
 import { getDb, closeDb, isSeenItem, markSeen, cleanupExpired, getRecentSentEvents, recordSentEvent, cleanupExpiredSentEvents } from './lib/db.js';
+import { loadCrowWireConfig } from './lib/config-loader.js';
 import { loadConfig } from './lib/config.js';
 import { loadTargets, loadDaemonConfig, loadFilters, computeFileHash } from './lib/target-config.js';
 import { createLlmClient } from './lib/llm-client.js';
@@ -34,6 +35,10 @@ class CrowWireDaemon {
   private configHashes: Map<string, string | null> = new Map();
 
   async start(): Promise<void> {
+    // 0. Load config.yaml → populate process.env (env vars take priority)
+    const configDir = process.env.CONFIG_DIR ?? '/app/config';
+    loadCrowWireConfig(configDir);
+
     // 1. Load configs
     this.daemonConfig = loadDaemonConfig();
     this.feedsConfig = loadConfig(this.daemonConfig.feeds_config);
