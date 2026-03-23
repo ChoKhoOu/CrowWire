@@ -35,6 +35,7 @@ describe('loadDaemonConfig', () => {
     'DIGEST_FLUSH_INTERVAL', 'URGENCY_THRESHOLD', 'SIMILARITY_THRESHOLD',
     'DEDUP_TTL_HOURS', 'SENT_EVENT_TTL_HOURS', 'CONTENT_MAX_CHARS',
     'MAX_ITEMS_PER_RUN', 'DB_PATH', 'FEEDS_CONFIG', 'TARGETS_CONFIG',
+    'FILTERS_CONFIG',
   ];
 
   let saved: Record<string, string | undefined> = {};
@@ -72,6 +73,7 @@ describe('loadDaemonConfig', () => {
     expect(cfg.db_path).toBe('/app/data/crowwire.db');
     expect(cfg.feeds_config).toBe('/app/feeds.yaml');
     expect(cfg.targets_config).toBe('/app/targets.yaml');
+    expect(cfg.filters_config).toBe('/app/filters.yaml');
   });
 
   it('overrides numeric values from env vars', () => {

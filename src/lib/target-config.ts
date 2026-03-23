@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { parse } from 'yaml';
-import type { DaemonConfig, TargetsConfig, PushTargetConfig, QueueType, PushTargetType } from '../types.js';
+import type { DaemonConfig, TargetsConfig, PushTargetConfig, QueueType, PushTargetType, FiltersConfig } from '../types.js';
 
 export function expandEnvVars(str: string): string {
   return str.replace(/\$\{([^}]+)\}/g, (_, name: string) => {
@@ -60,6 +61,28 @@ export function loadTargets(path: string): TargetsConfig {
   return { targets };
 }
 
+export function computeFileHash(filePath: string): string | null {
+  try {
+    const content = readFileSync(filePath, 'utf-8');
+    return createHash('sha256').update(content).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+export function loadFilters(path: string): FiltersConfig {
+  try {
+    const raw = readFileSync(path, 'utf-8');
+    const parsed = parse(raw) as Record<string, unknown>;
+    const blacklist = Array.isArray(parsed?.blacklist)
+      ? (parsed.blacklist as unknown[]).filter((x): x is string => typeof x === 'string')
+      : [];
+    return { blacklist };
+  } catch {
+    return { blacklist: [] };
+  }
+}
+
 function envStr(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
 }
@@ -86,5 +109,6 @@ export function loadDaemonConfig(): DaemonConfig {
     db_path:               envStr('DB_PATH',               '/app/data/crowwire.db'),
     feeds_config:          envStr('FEEDS_CONFIG',          '/app/feeds.yaml'),
     targets_config:        envStr('TARGETS_CONFIG',        '/app/targets.yaml'),
+    filters_config:        envStr('FILTERS_CONFIG',        '/app/filters.yaml'),
   };
 }
