@@ -6,14 +6,46 @@ import type { FeedItem, ScoredItem } from '../types.js';
 
 const BATCH_SIZE = 30;
 
-const SCORING_PROMPT = `You are a news analyst. For each news item:
+const SCORING_PROMPT = `You are a news analyst. You will receive a JSON array of FeedItem objects (id, title, link, content, published_at, source), up to 30 items per batch.
+
+For each news item:
 1. Score it:
    - urgency (0-100): How time-sensitive? Breaking events score 90+.
    - relevance (0-100): How important to a tech/finance professional?
    - novelty (0-100): How surprising or new is this information?
-2. Write a summary in Chinese (30-150 characters). It MUST add context or details beyond the title — do NOT repeat or rephrase the title.
+2. Write a summary in Chinese (30-150 characters).
 
-Return your response as XML using EXACTLY these tags and no others:
+## Summary Rules (CRITICAL)
+
+Summary = 事实摘要, NOT 分析评论.
+
+Structure: **[WHO/WHAT] + [DID WHAT] + [KEY DETAIL/NUMBER]**, optionally followed by one sentence of impact.
+
+- MUST start with the concrete event/fact: who did what, what happened, what number changed.
+- If the news contains specific numbers, prices, percentages, or dates, INCLUDE them.
+- Impact/implication is OPTIONAL and must be ≤ 1 sentence, placed AFTER the fact.
+- Do NOT write summaries that only contain analysis without stating the underlying fact.
+
+### ONE-SHOT EXAMPLE
+
+Input:
+{"id":"n001","title":"以色列对伊朗发动大规模空袭，布什尔核电站附近传出爆炸","content":"当地时间周六凌晨，以色列对伊朗多处军事目标发动空袭，伊朗国家电视台报道布什尔省核电站附近区域传出爆炸声。伊朗石油部称Assaluyeh天然气设施未受影响。原油期货亚盘跳涨3.2%。PP期货盘中触及涨停。","source":"Reuters"}
+
+GOOD summary:
+以色列大规模空袭伊朗军事目标，布什尔核电站附近传出爆炸，伊方称天然气设施未受损。原油期货亚盘跳涨3.2%，PP期货盘中触及涨停。
+
+BAD summary (DO NOT write like this):
+若冲突从军事打击延伸到能源与核设施层面，潜在外溢后果将远超常规地缘摩擦。布什尔核电站一旦卷入，可能触发更强国际干预，并显著抬升原油与航运风险溢价。
+
+Why BAD: Reader has no idea what actually happened. It reads like a think-tank report, not a news summary. No facts, no numbers, no event.
+
+### MORE BAD PATTERNS (FORBIDDEN)
+- "该新闻表明..." / "这表明..." — 你还没告诉我新闻内容就开始"表明"
+- "若...则..." 开头的纯假设推演 — 先说事实
+- "值得关注的是..." — 先说发生了什么
+- 通篇无主语无事件，全是 "可能"、"或将"、"意味着"
+
+Return your response as XML using EXACTLY these tags:
 <news_list>
   <news>
     <id>{item id}</id>
@@ -22,7 +54,7 @@ Return your response as XML using EXACTLY these tags and no others:
       <relevance>{0-100}</relevance>
       <novelty>{0-100}</novelty>
     </scores>
-    <summary>{Chinese summary}</summary>
+    <summary>{Chinese summary — 事实先行}</summary>
   </news>
 </news_list>
 
