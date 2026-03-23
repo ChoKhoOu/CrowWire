@@ -15,11 +15,11 @@ function makeFeedItem(overrides: Partial<FeedItem> = {}): FeedItem {
   };
 }
 
-/** Create a mock SSE streaming response from XML content */
+/** Create a mock SSE streaming response from XML content (Responses API format) */
 function makeStreamResponse(xmlContent: string) {
-  const sseData = `data: ${JSON.stringify({
-    choices: [{ delta: { content: xmlContent } }],
-  })}\n\ndata: [DONE]\n\n`;
+  const sseData =
+    `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: xmlContent })}\n\n` +
+    `data: ${JSON.stringify({ type: 'response.completed' })}\n\n`;
 
   return {
     ok: true,
@@ -76,7 +76,7 @@ describe('scoreBatch with blacklist (XML streaming)', () => {
     await scoreBatch(items, blacklist);
 
     const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const systemPrompt = callBody.messages[0].content;
+    const systemPrompt = callBody.instructions;
     expect(systemPrompt).toContain('blacklist categories');
     expect(systemPrompt).toContain('大A个股涨跌相关新闻');
   });

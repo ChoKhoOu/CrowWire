@@ -10,7 +10,10 @@ function makeOkResponse(content: string) {
     ok: true,
     status: 200,
     json: () => Promise.resolve({
-      choices: [{ message: { content } }],
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: content }],
+      }],
     }),
     text: () => Promise.resolve(content),
   }
@@ -46,7 +49,7 @@ describe('LlmClient', () => {
     vi.useRealTimers()
   })
 
-  // 1. Successful chat completion
+  // 1. Successful completion via Responses API
   it('sends correct API request and returns content', async () => {
     const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
     mockFetch.mockResolvedValueOnce(makeOkResponse('Hello world'))
@@ -56,15 +59,13 @@ describe('LlmClient', () => {
     expect(result).toBe('Hello world')
     expect(mockFetch).toHaveBeenCalledOnce()
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://api.example.com/chat/completions')
+    expect(url).toBe('https://api.example.com/responses')
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer sk-test')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
     const body = JSON.parse(init.body as string)
     expect(body.model).toBe('gpt-4')
-    expect(body.messages).toEqual([
-      { role: 'system', content: 'You are helpful.' },
-      { role: 'user', content: 'Say hi' },
-    ])
+    expect(body.instructions).toBe('You are helpful.')
+    expect(body.input).toBe('Say hi')
   })
 
   // 2. Retry on network failure then succeeds
@@ -120,9 +121,9 @@ describe('LlmClient', () => {
     const result = await client.chatCompletionJson<{ score: number }>('sys', 'user')
 
     expect(result).toEqual({ score: 42 })
-    // Should include response_format in request body
+    // Should include text.format in request body
     const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
-    expect(body.response_format).toEqual({ type: 'json_object' })
+    expect(body.text).toEqual({ format: { type: 'json_object' } })
   })
 
   // 5. JSON parse error throws
@@ -188,7 +189,7 @@ describe('LlmClient', () => {
 
     expect(result).toBe('env test')
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://my-llm.example.com/chat/completions')
+    expect(url).toBe('https://my-llm.example.com/responses')
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer my-key')
     const body = JSON.parse(init.body as string)
     expect(body.model).toBe('my-model')
@@ -208,15 +209,15 @@ describe('LlmClient', () => {
     await client.chatCompletion('sys', 'user')
 
     const [url] = mockFetch.mock.calls[0] as [string]
-    expect(url).toBe('https://api.example.com/chat/completions')
+    expect(url).toBe('https://api.example.com/responses')
   })
 
   // === chatCompletionStream tests ===
 
   function makeStreamResponse(chunks: string[]) {
     const sseLines = chunks.map(c =>
-      `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`
-    ).join('') + 'data: [DONE]\n\n'
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: c })}\n\n`
+    ).join('') + `data: ${JSON.stringify({ type: 'response.completed' })}\n\n`
 
     return {
       ok: true,
@@ -241,10 +242,11 @@ describe('LlmClient', () => {
     // Verify stream: true in request
     const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
     expect(body.stream).toBe(true)
-    expect(body.response_format).toBeUndefined()
+    expect(body.instructions).toBe('sys')
+    expect(body.input).toBe('user')
   })
 
-  it('chatCompletionStream handles data: [DONE] sentinel', async () => {
+  it('chatCompletionStream handles response.completed event', async () => {
     const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
     mockFetch.mockResolvedValueOnce(makeStreamResponse(['ok']))
 
@@ -316,7 +318,7 @@ describe('LlmClient', () => {
         pull(controller) {
           readerCallCount++
           if (readerCallCount === 1) {
-            const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: 'partial' } }] })}\n\n`
+            const chunk = `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: 'partial' })}\n\n`
             controller.enqueue(new TextEncoder().encode(chunk))
           } else {
             controller.error(new Error('stream broke'))
@@ -336,7 +338,8 @@ describe('LlmClient', () => {
     const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
 
     // Split a single SSE line across two chunks
-    const fullLine = `data: ${JSON.stringify({ choices: [{ delta: { content: 'split-test' } }] })}\n\ndata: [DONE]\n\n`
+    const fullLine = `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: 'split-test' })}\n\n` +
+      `data: ${JSON.stringify({ type: 'response.completed' })}\n\n`
     const splitPoint = 5 // Split after "data:"
     const part1 = fullLine.slice(0, splitPoint)
     const part2 = fullLine.slice(splitPoint)

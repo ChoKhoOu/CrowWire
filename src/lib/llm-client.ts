@@ -1,17 +1,20 @@
-// Direct OpenAI-compatible API client for CrowWire v2
-// Replaces the invokeTool('llm-task', ...) pattern
+// OpenAI Responses API client for CrowWire v2
+// Uses /v1/responses endpoint (replaces /v1/chat/completions)
 
 const DEFAULT_TIMEOUT_MS = 60_000
 const STREAM_TIMEOUT_MS = 180_000 // 3x default for streaming with larger batches
 const MAX_RETRIES = 2
 const RETRY_DELAYS = [1000, 3000] // exponential backoff
 
-interface ChatCompletionResponse {
-  choices: Array<{
-    message: {
-      content: string
-    }
+interface ResponsesApiResult {
+  output: Array<{
+    type: string
+    content?: Array<{
+      type: string
+      text?: string
+    }>
   }>
+  status?: string
 }
 
 function sleep(ms: number): Promise<void> {
@@ -31,19 +34,17 @@ export class LlmClient {
     userMessage: string,
     options?: { temperature?: number; maxTokens?: number; responseFormat?: { type: string } },
   ): Promise<string> {
-    const url = `${this.baseUrl.replace(/\/$/, '')}/chat/completions`
+    const url = `${this.baseUrl.replace(/\/$/, '')}/responses`
 
     const body: Record<string, unknown> = {
       model: this.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+      instructions: systemPrompt,
+      input: userMessage,
     }
 
     if (options?.temperature !== undefined) body.temperature = options.temperature
-    if (options?.maxTokens !== undefined) body.max_tokens = options.maxTokens
-    if (options?.responseFormat !== undefined) body.response_format = options.responseFormat
+    if (options?.maxTokens !== undefined) body.max_output_tokens = options.maxTokens
+    if (options?.responseFormat !== undefined) body.text = { format: options.responseFormat }
 
     let lastError: Error | null = null
 
@@ -76,10 +77,14 @@ export class LlmClient {
           continue
         }
 
-        const data = (await res.json()) as ChatCompletionResponse
-        const content = data.choices?.[0]?.message?.content
+        const data = (await res.json()) as ResponsesApiResult
+        const content = data.output
+          ?.find(o => o.type === 'message')
+          ?.content
+          ?.find(c => c.type === 'output_text')
+          ?.text
         if (typeof content !== 'string') {
-          throw new Error('Invalid response: missing choices[0].message.content')
+          throw new Error('Invalid response: missing output_text in response')
         }
         return content
       } catch (err) {
@@ -120,20 +125,18 @@ export class LlmClient {
     onChunk: (text: string) => void,
     options?: { temperature?: number; maxTokens?: number; timeoutMs?: number },
   ): Promise<void> {
-    const url = `${this.baseUrl.replace(/\/$/, '')}/chat/completions`
+    const url = `${this.baseUrl.replace(/\/$/, '')}/responses`
     const timeoutMs = options?.timeoutMs ?? STREAM_TIMEOUT_MS
 
     const body: Record<string, unknown> = {
       model: this.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+      instructions: systemPrompt,
+      input: userMessage,
       stream: true,
     }
 
     if (options?.temperature !== undefined) body.temperature = options.temperature
-    if (options?.maxTokens !== undefined) body.max_tokens = options.maxTokens
+    if (options?.maxTokens !== undefined) body.max_output_tokens = options.maxTokens
 
     let lastError: Error | null = null
 
@@ -191,18 +194,18 @@ export class LlmClient {
 
             for (const line of lines) {
               const trimmed = line.trim()
-              if (trimmed === 'data: [DONE]') {
-                clearTimeout(timer)
-                return
-              }
               if (!trimmed.startsWith('data: ')) continue
               try {
                 const json = JSON.parse(trimmed.slice(6)) as {
-                  choices?: Array<{ delta?: { content?: string } }>
+                  type?: string
+                  delta?: string
                 }
-                const content = json.choices?.[0]?.delta?.content
-                if (typeof content === 'string' && content) {
-                  onChunk(content)
+                if (json.type === 'response.completed' || json.type === 'response.failed' || json.type === 'response.incomplete') {
+                  clearTimeout(timer)
+                  return
+                }
+                if (json.type === 'response.output_text.delta' && typeof json.delta === 'string' && json.delta) {
+                  onChunk(json.delta)
                 }
               } catch {
                 // Malformed SSE JSON line — skip silently
@@ -213,14 +216,14 @@ export class LlmClient {
           // Process any remaining partial line
           if (partialLine.trim()) {
             const trimmed = partialLine.trim()
-            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
+            if (trimmed.startsWith('data: ')) {
               try {
                 const json = JSON.parse(trimmed.slice(6)) as {
-                  choices?: Array<{ delta?: { content?: string } }>
+                  type?: string
+                  delta?: string
                 }
-                const content = json.choices?.[0]?.delta?.content
-                if (typeof content === 'string' && content) {
-                  onChunk(content)
+                if (json.type === 'response.output_text.delta' && typeof json.delta === 'string' && json.delta) {
+                  onChunk(json.delta)
                 }
               } catch { /* skip */ }
             }
