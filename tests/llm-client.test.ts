@@ -210,4 +210,158 @@ describe('LlmClient', () => {
     const [url] = mockFetch.mock.calls[0] as [string]
     expect(url).toBe('https://api.example.com/chat/completions')
   })
+
+  // === chatCompletionStream tests ===
+
+  function makeStreamResponse(chunks: string[]) {
+    const sseLines = chunks.map(c =>
+      `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`
+    ).join('') + 'data: [DONE]\n\n'
+
+    return {
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sseLines))
+          controller.close()
+        },
+      }),
+    }
+  }
+
+  it('chatCompletionStream calls onChunk with text content', async () => {
+    const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
+    mockFetch.mockResolvedValueOnce(makeStreamResponse(['Hello', ' world']))
+
+    const chunks: string[] = []
+    await client.chatCompletionStream('sys', 'user', (text) => chunks.push(text))
+
+    expect(chunks).toEqual(['Hello', ' world'])
+    // Verify stream: true in request
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+    expect(body.stream).toBe(true)
+    expect(body.response_format).toBeUndefined()
+  })
+
+  it('chatCompletionStream handles data: [DONE] sentinel', async () => {
+    const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
+    mockFetch.mockResolvedValueOnce(makeStreamResponse(['ok']))
+
+    const chunks: string[] = []
+    await client.chatCompletionStream('sys', 'user', (text) => chunks.push(text))
+
+    expect(chunks).toEqual(['ok'])
+  })
+
+  it('chatCompletionStream retries on initial connection failure', async () => {
+    vi.useFakeTimers()
+    const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
+
+    mockFetch
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce(makeStreamResponse(['retry-ok']))
+
+    const chunks: string[] = []
+    const promise = client.chatCompletionStream('sys', 'user', (text) => chunks.push(text))
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+
+    expect(chunks).toEqual(['retry-ok'])
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('chatCompletionStream throws on timeout', async () => {
+    const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
+
+    // Create a stream that hangs — reader.read() blocks until abort signal fires
+    mockFetch.mockImplementation((_url: string, init: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          pull() {
+            return new Promise((_resolve, reject) => {
+              if (signal?.aborted) {
+                const err = new Error('The operation was aborted')
+                err.name = 'AbortError'
+                reject(err)
+                return
+              }
+              signal?.addEventListener('abort', () => {
+                const err = new Error('The operation was aborted')
+                err.name = 'AbortError'
+                reject(err)
+              })
+            })
+          },
+        }),
+      })
+    })
+
+    await expect(
+      client.chatCompletionStream('sys', 'user', () => {}, { timeoutMs: 50 })
+    ).rejects.toThrow('timed out')
+  })
+
+  it('chatCompletionStream resolves with partial results on mid-stream error', async () => {
+    const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
+
+    let readerCallCount = 0
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        pull(controller) {
+          readerCallCount++
+          if (readerCallCount === 1) {
+            const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: 'partial' } }] })}\n\n`
+            controller.enqueue(new TextEncoder().encode(chunk))
+          } else {
+            controller.error(new Error('stream broke'))
+          }
+        },
+      }),
+    })
+
+    const chunks: string[] = []
+    // Should resolve (not throw) — partial results kept
+    await client.chatCompletionStream('sys', 'user', (text) => chunks.push(text))
+
+    expect(chunks).toEqual(['partial'])
+  })
+
+  it('chatCompletionStream handles SSE line split across chunks', async () => {
+    const client = new LlmClient('https://api.example.com', 'sk-test', 'gpt-4')
+
+    // Split a single SSE line across two chunks
+    const fullLine = `data: ${JSON.stringify({ choices: [{ delta: { content: 'split-test' } }] })}\n\ndata: [DONE]\n\n`
+    const splitPoint = 5 // Split after "data:"
+    const part1 = fullLine.slice(0, splitPoint)
+    const part2 = fullLine.slice(splitPoint)
+
+    let readCount = 0
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        pull(controller) {
+          readCount++
+          if (readCount === 1) {
+            controller.enqueue(new TextEncoder().encode(part1))
+          } else if (readCount === 2) {
+            controller.enqueue(new TextEncoder().encode(part2))
+          } else {
+            controller.close()
+          }
+        },
+      }),
+    })
+
+    const chunks: string[] = []
+    await client.chatCompletionStream('sys', 'user', (text) => chunks.push(text))
+
+    expect(chunks).toEqual(['split-test'])
+  })
 })
