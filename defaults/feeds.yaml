@@ -1,0 +1,42 @@
+feeds:
+  # Bloomberg
+  - name: bloomberg-markets
+    url: http://localhost:1200/bloomberg/markets
+    enabled: true
+  - name: bloomberg-technology
+    url: http://localhost:1200/bloomberg/technology
+    enabled: true
+  - name: bloomberg-business
+    url: http://localhost:1200/bloomberg/bbiz
+    enabled: true
+
+  # 金十数据
+  - name: jin10-important
+    url: http://localhost:1200/jin10/1
+    enabled: true
+
+  # 华尔街见闻
+  - name: wallstreetcn-news
+    url: http://localhost:1200/wallstreetcn/news
+    enabled: true
+  - name: wallstreetcn-live-important
+    url: http://localhost:1200/wallstreetcn/live/global/2
+    enabled: true
+
+  # 财联社
+  - name: cls-telegraph
+    url: http://localhost:1200/cls/telegraph
+    enabled: true
+  - name: cls-hot
+    url: http://localhost:1200/cls/hot
+    enabled: true
+  - name: cls-depth
+    url: http://localhost:1200/cls/depth
+    enabled: true
+
+settings:
+  urgent_threshold: 75
+  digest_interval_minutes: 15
+  dedup_ttl_hours: 72
+  content_max_chars: 500
+  max_items_per_run: 30

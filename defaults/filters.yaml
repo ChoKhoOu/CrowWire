@@ -1,0 +1,6 @@
+# Blacklist: items matching any category will be filtered out.
+# Each entry is a natural-language description evaluated by the LLM.
+# Keep the list under 50 entries for best results.
+blacklist:
+  # - "大A个股涨跌、股价、涨停板相关新闻"
+  # - "加密货币币价波动"
